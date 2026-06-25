@@ -148,3 +148,34 @@ def get_audit_logs(db: Session):
     return(
         db.query(models.AuditLog).order_by(models.AuditLog.timestamp.desc()).all()
     )
+
+def use_item(db: Session, item_id: int, amount: int):
+    item = get_item(db, item_id)
+
+    if item is None:
+        return None
+    
+    if amount <= 0:
+        return "invalid_amount"
+    
+    if item.quantity < amount:
+        return "not_enough_quantity"
+    
+    item.quantity -= amount
+    db.commit()
+    db.refresh(item)
+    return item
+
+def restock_item(db: Session, item_id: int, amount: int):
+    item = get_item(db, item_id)
+
+    if item is None:
+        return None
+    
+    if amount <= 0:
+        return "invalid_amount"
+    
+    item.quantity += amount
+    db.commit()
+    db.refresh(item)
+    return item

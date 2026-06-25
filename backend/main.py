@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from database import Base, engine, SessionLocal
@@ -52,24 +52,23 @@ def create_item(
 
     return created_item
 
-@app.post("/items/{item_id}/use")
+@app.post("/items/{item_id}/use", response_model=schemas.ItemResponse)
 def use_item(
     item_id: int,
-    amount: int,
+    amount: int = Query(..., gt = 0),
     db: Session = Depends(get_db),
     current_user = Depends(auth.require_role("admin", "user")),
 ):
-    item = crud.get_item(db, item_id)
+    item = crud.use_item(db, item_id, amount)
 
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    if item.quantity < amount:
-        raise HTTPException(status_code=400, detail="Not enough quantity")
+    if item == "invalid_amount":
+        raise HTTPException(status_code=400, detail="Amount must be greater than 0")
 
-    item.quantity -= amount
-    db.commit()
-    db.refresh(item)
+    if item == "not_enough_quantity":
+        raise HTTPException(status_code=400, detail="Not enough quantity")
 
     crud.create_audit_log(
         db,
@@ -81,25 +80,29 @@ def use_item(
 
     return item
 
-@app.post("/items/{item_id}/restock")
+@app.post("/items/{item_id}/restock", response_model=schemas.ItemResponse)
 def restock_item(
     item_id: int,
-    amount: int,
+    amount: int = Query(..., gt = 0),
     db: Session = Depends(get_db),
-    current_user = Depends(auth.require_role("admin"))
+    current_user = Depends(auth.require_role("admin", "restocker")),
 ):
-    item = crud.get_item(db, item_id)
+    item = crud.restock_item(db, item_id, amount)
+
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
-    item.quantity += amount
-    db.commit()
-    db.refresh(item)
+
+    if item == "invalid_amount":
+        raise HTTPException(status_code=400, detail="Amount must be greater than 0")
+
     crud.create_audit_log(
-        db, username= current_user.username,
-        action = "RESTOCK_ITEM",
-        item_id = item.id,
-        details = f"Restocked {amount} of {item.item_name}",
+        db,
+        username=current_user.username,
+        action="RESTOCK_ITEM",
+        item_id=item.id,
+        details=f"Restocked {amount} of {item.item_name}",
     )
+
     return item
 
 @app.put("/items/{item_id}", response_model = schemas.ItemResponse)

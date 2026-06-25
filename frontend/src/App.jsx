@@ -20,7 +20,14 @@ const EMPTY_FILTERS = {
   low_stock: "",
 };
 
+function getItemId(item) {
+  return item.id ?? item.catalogue_num;
+}
+
 function itemStatus(item) {
+  const criticalThreshold = item.critical_threshold ?? 1;
+  const reorderThreshold = item.reorder_threshold ?? 5;
+
   if (item.quantity <= 0) {
     return {
       text: "Out of stock",
@@ -28,20 +35,14 @@ function itemStatus(item) {
     };
   }
 
-  if (
-    item.quantity <=
-    (item.critical_threshold ?? 1)
-  ) {
+  if (item.quantity <= criticalThreshold) {
     return {
       text: "Critical",
       className: "status critical",
     };
   }
 
-  if (
-    item.quantity <=
-    (item.reorder_threshold ?? 5)
-  ) {
+  if (item.quantity <= reorderThreshold) {
     return {
       text: "Low stock",
       className: "status low",
@@ -59,8 +60,7 @@ function formatDate(value) {
     return "—";
   }
 
-  return new Date(`${value}T00:00:00`)
-    .toLocaleDateString();
+  return new Date(`${value}T00:00:00`).toLocaleDateString();
 }
 
 function formatTimestamp(value) {
@@ -75,6 +75,7 @@ function App() {
   const [token, setToken] = useState(
     () => localStorage.getItem("access_token") || "",
   );
+
   const [user, setUser] = useState(null);
   const [items, setItems] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
@@ -82,27 +83,21 @@ function App() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
 
-  const [filters, setFilters] =
-    useState(EMPTY_FILTERS);
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [amounts, setAmounts] = useState({});
 
-  const [activeView, setActiveView] =
-    useState("inventory");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingItem, setEditingItem] =
-    useState(null);
+  const [activeView, setActiveView] = useState("inventory");
 
-  const [restoring, setRestoring] =
-    useState(Boolean(token));
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+
+  const [restoring, setRestoring] = useState(Boolean(token));
   const [loading, setLoading] = useState(false);
-  const [loadingItems, setLoadingItems] =
-    useState(false);
-  const [loadingAudit, setLoadingAudit] =
-    useState(false);
-  const [savingItem, setSavingItem] =
-    useState(false);
-  const [busyItemId, setBusyItemId] =
-    useState(null);
+  const [loadingItems, setLoadingItems] = useState(false);
+  const [loadingAudit, setLoadingAudit] = useState(false);
+  const [savingItem, setSavingItem] = useState(false);
+  const [busyItemId, setBusyItemId] = useState(null);
+
   const [error, setError] = useState("");
 
   const isAdmin = user?.role?.toLowerCase() === "admin";
@@ -146,11 +141,10 @@ function App() {
       setError("");
 
       try {
-        const [currentUser, inventory] =
-          await Promise.all([
-            getCurrentUser(token),
-            getItems(token),
-          ]);
+        const [currentUser, inventory] = await Promise.all([
+          getCurrentUser(token),
+          getItems(token),
+        ]);
 
         if (cancelled) {
           return;
@@ -163,6 +157,7 @@ function App() {
           localStorage.removeItem("access_token");
           setToken("");
           setUser(null);
+          setItems([]);
           setError(err.message);
         }
       } finally {
@@ -179,29 +174,12 @@ function App() {
     };
   }, [token]);
 
-  useEffect(() => {
-    if (
-      activeView !== "audit" ||
-      !isAdmin ||
-      !token
-    ) {
-      return;
-    }
-
-    loadAuditLogs();
-  }, [activeView, isAdmin, token]);
-
-  async function refreshItems(
-    selectedFilters = filters,
-  ) {
+  async function refreshItems(selectedFilters = filters) {
     setLoadingItems(true);
     setError("");
 
     try {
-      const inventory = await getItems(
-        token,
-        selectedFilters,
-      );
+      const inventory = await getItems(token, selectedFilters);
       setItems(inventory);
     } catch (err) {
       setError(err.message);
@@ -226,21 +204,17 @@ function App() {
 
   async function handleLogin(event) {
     event.preventDefault();
+
     setLoading(true);
     setError("");
 
     try {
-      const tokenData = await login(
-        username,
-        password,
-      );
+      const tokenData = await login(username, password);
+      const accessToken = tokenData.access_token;
 
-      localStorage.setItem(
-        "access_token",
-        tokenData.access_token,
-      );
+      localStorage.setItem("access_token", accessToken);
 
-      setToken(tokenData.access_token);
+      setToken(accessToken);
       setPassword("");
     } catch (err) {
       setError(err.message);
@@ -259,7 +233,10 @@ function App() {
     setUsername("");
     setPassword("");
     setFilters(EMPTY_FILTERS);
+    setAmounts({});
     setActiveView("inventory");
+    setModalOpen(false);
+    setEditingItem(null);
     setError("");
   }
 
@@ -274,7 +251,7 @@ function App() {
 
   async function handleFilterSubmit(event) {
     event.preventDefault();
-    await refreshItems();
+    await refreshItems(filters);
   }
 
   async function clearFilters() {
@@ -283,22 +260,28 @@ function App() {
   }
 
   async function handleUse(item) {
-    const amount = Number(amounts[item.id] || 1);
+    const itemId = getItemId(item);
+    const amount = Number(amounts[itemId] || 1);
 
     if (!Number.isInteger(amount) || amount < 1) {
       setError("Use amount must be a positive whole number.");
       return;
     }
 
-    setBusyItemId(item.id);
+    if (amount > item.quantity) {
+      setError(`Only ${item.quantity} units are available.`);
+      return;
+    }
+
+    setBusyItemId(itemId);
     setError("");
 
     try {
-      await useItem(token, item.id, amount);
+      await useItem(token, itemId, amount);
 
       setAmounts((current) => ({
         ...current,
-        [item.id]: 1,
+        [itemId]: 1,
       }));
 
       await refreshItems();
@@ -310,9 +293,11 @@ function App() {
   }
 
   async function handleRestock(item) {
+    const itemId = getItemId(item);
+
     const input = window.prompt(
       `How many units of ${item.item_name} should be added?`,
-      "1",
+      "10",
     );
 
     if (input === null) {
@@ -322,17 +307,15 @@ function App() {
     const amount = Number(input);
 
     if (!Number.isInteger(amount) || amount < 1) {
-      setError(
-        "Restock amount must be a positive whole number.",
-      );
+      setError("Restock amount must be a positive whole number.");
       return;
     }
 
-    setBusyItemId(item.id);
+    setBusyItemId(itemId);
     setError("");
 
     try {
-      await restockItem(token, item.id, amount);
+      await restockItem(token, itemId, amount);
       await refreshItems();
     } catch (err) {
       setError(err.message);
@@ -342,6 +325,8 @@ function App() {
   }
 
   async function handleDelete(item) {
+    const itemId = getItemId(item);
+
     const confirmed = window.confirm(
       `Delete ${item.item_name}? This cannot be undone.`,
     );
@@ -350,11 +335,11 @@ function App() {
       return;
     }
 
-    setBusyItemId(item.id);
+    setBusyItemId(itemId);
     setError("");
 
     try {
-      await deleteItem(token, item.id);
+      await deleteItem(token, itemId);
       await refreshItems();
     } catch (err) {
       setError(err.message);
@@ -371,7 +356,7 @@ function App() {
       if (editingItem) {
         await updateItem(
           token,
-          editingItem.id,
+          getItemId(editingItem),
           payload,
         );
       } else {
@@ -380,6 +365,7 @@ function App() {
 
       setModalOpen(false);
       setEditingItem(null);
+
       await refreshItems();
     } catch (err) {
       setError(err.message);
@@ -390,12 +376,19 @@ function App() {
 
   function openNewItemModal() {
     setEditingItem(null);
+    setError("");
     setModalOpen(true);
   }
 
   function openEditModal(item) {
     setEditingItem(item);
+    setError("");
     setModalOpen(true);
+  }
+
+  async function openAuditLog() {
+    setActiveView("audit");
+    await loadAuditLogs();
   }
 
   if (restoring) {
@@ -416,6 +409,7 @@ function App() {
           <div className="brand-mark">1C</div>
 
           <h1>Lab Inventory</h1>
+
           <p className="muted">
             Sign in to manage laboratory supplies.
           </p>
@@ -446,7 +440,9 @@ function App() {
           </label>
 
           {error && (
-            <p className="error-message">{error}</p>
+            <p className="error-message">
+              {error}
+            </p>
           )}
 
           <button
@@ -465,16 +461,21 @@ function App() {
       <header className="topbar">
         <div>
           <h1>Lab Inventory</h1>
+
           <p>
             Signed in as{" "}
             <strong>{user.username}</strong>
-            <span className="role">{user.role}</span>
+
+            <span className="role">
+              {user.role}
+            </span>
           </p>
         </div>
 
         <div className="header-actions">
           <nav className="nav-tabs">
             <button
+              type="button"
               className={
                 activeView === "inventory"
                   ? "nav-tab active"
@@ -489,14 +490,13 @@ function App() {
 
             {isAdmin && (
               <button
+                type="button"
                 className={
                   activeView === "audit"
                     ? "nav-tab active"
                     : "nav-tab"
                 }
-                onClick={() =>
-                  setActiveView("audit")
-                }
+                onClick={openAuditLog}
               >
                 Audit log
               </button>
@@ -504,6 +504,7 @@ function App() {
           </nav>
 
           <button
+            type="button"
             className="secondary-button"
             onClick={handleLogout}
           >
@@ -591,6 +592,7 @@ function App() {
                   type="button"
                   className="secondary-button"
                   onClick={clearFilters}
+                  disabled={loadingItems}
                 >
                   Clear
                 </button>
@@ -598,6 +600,7 @@ function App() {
 
               {isAdmin && (
                 <button
+                  type="button"
                   className="primary-button"
                   onClick={openNewItemModal}
                 >
@@ -628,25 +631,26 @@ function App() {
                         <th>Expiry</th>
                         <th>Status</th>
                         <th>Use</th>
+
                         {isAdmin && <th>Admin</th>}
                       </tr>
                     </thead>
 
                     <tbody>
                       {items.map((item) => {
-                        const status =
-                          itemStatus(item);
-                        const busy =
-                          busyItemId === item.id;
+                        const itemId = getItemId(item);
+                        const status = itemStatus(item);
+                        const busy = busyItemId === itemId;
 
                         return (
-                          <tr key={item.id}>
+                          <tr key={itemId}>
                             <td>
                               <strong>
                                 {item.item_name}
                               </strong>
+
                               <span className="cell-detail">
-                                {item.brand}
+                                {item.brand || "No brand"}
                               </span>
                             </td>
 
@@ -658,8 +662,13 @@ function App() {
                               {item.lot_num ?? "—"}
                             </td>
 
-                            <td>{item.storage_id}</td>
-                            <td>{item.quantity}</td>
+                            <td>
+                              {item.storage_id}
+                            </td>
+
+                            <td>
+                              {item.quantity}
+                            </td>
 
                             <td>
                               {formatDate(
@@ -684,8 +693,7 @@ function App() {
                                   min="1"
                                   max={item.quantity}
                                   value={
-                                    amounts[item.id] ||
-                                    1
+                                    amounts[itemId] ?? 1
                                   }
                                   disabled={
                                     busy ||
@@ -695,15 +703,15 @@ function App() {
                                     setAmounts(
                                       (current) => ({
                                         ...current,
-                                        [item.id]:
-                                          event.target
-                                            .value,
+                                        [itemId]:
+                                          event.target.value,
                                       }),
                                     )
                                   }
                                 />
 
                                 <button
+                                  type="button"
                                   className="use-button"
                                   disabled={
                                     busy ||
@@ -713,7 +721,7 @@ function App() {
                                     handleUse(item)
                                   }
                                 >
-                                  Use
+                                  {busy ? "..." : "Use"}
                                 </button>
                               </div>
                             </td>
@@ -722,6 +730,7 @@ function App() {
                               <td>
                                 <div className="admin-actions">
                                   <button
+                                    type="button"
                                     className="small-button"
                                     disabled={busy}
                                     onClick={() =>
@@ -732,6 +741,7 @@ function App() {
                                   </button>
 
                                   <button
+                                    type="button"
                                     className="small-button"
                                     disabled={busy}
                                     onClick={() =>
@@ -742,6 +752,7 @@ function App() {
                                   </button>
 
                                   <button
+                                    type="button"
                                     className="small-button danger-button"
                                     disabled={busy}
                                     onClick={() =>
@@ -767,18 +778,19 @@ function App() {
             <div className="section-heading">
               <div>
                 <h2>Audit log</h2>
+
                 <p>
-                  Inventory actions recorded by the
-                  backend.
+                  Inventory actions recorded by the backend.
                 </p>
               </div>
 
               <button
+                type="button"
                 className="secondary-button"
                 onClick={loadAuditLogs}
                 disabled={loadingAudit}
               >
-                Refresh
+                {loadingAudit ? "Loading..." : "Refresh"}
               </button>
             </div>
 
@@ -811,12 +823,22 @@ function App() {
                             log.timestamp,
                           )}
                         </td>
-                        <td>{log.username}</td>
+
+                        <td>
+                          {log.username}
+                        </td>
+
                         <td>
                           <code>{log.action}</code>
                         </td>
-                        <td>{log.item_id ?? "—"}</td>
-                        <td>{log.details ?? "—"}</td>
+
+                        <td>
+                          {log.item_id ?? "—"}
+                        </td>
+
+                        <td>
+                          {log.details ?? "—"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -844,3 +866,4 @@ function App() {
 }
 
 export default App;
+
