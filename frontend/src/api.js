@@ -141,3 +141,14 @@ export function restockItem(token, itemId, amount) {
 export function getAuditLogs(token) {
   return apiRequest("/audit-logs/", { token });
 }
+
+export function createUser(token, user) {
+  return apiRequest("/users/", {
+    token,
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(user),
+  });
+}

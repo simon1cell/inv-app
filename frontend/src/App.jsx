@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   createItem,
+  createUser,
   deleteItem,
   getAuditLogs,
   getCurrentUser,
@@ -11,6 +12,7 @@ import {
   useItem,
 } from "./api";
 import ItemModal from "./ItemModal";
+import UserModal from "./UserModal";
 import "./App.css";
 
 const EMPTY_FILTERS = {
@@ -88,6 +90,8 @@ function App() {
 
   const [activeView, setActiveView] = useState("inventory");
 
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [creatingUser, setCreatingUser] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
 
@@ -238,6 +242,7 @@ function App() {
     setModalOpen(false);
     setEditingItem(null);
     setError("");
+    setUserModalOpen(false);
   }
 
   function updateFilter(event) {
@@ -291,6 +296,29 @@ function App() {
       setBusyItemId(null);
     }
   }
+
+  async function handleCreateUser(payload) {
+  setCreatingUser(true);
+  setError("");
+
+  try {
+    const createdUser = await createUser(token, payload);
+
+    setUserModalOpen(false);
+
+    window.alert(
+      `Created ${createdUser.role} account: ${createdUser.username}`,
+    );
+
+    if (activeView === "audit") {
+      await loadAuditLogs();
+    }
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setCreatingUser(false);
+  }
+}
 
   async function handleRestock(item) {
     const itemId = getItemId(item);
@@ -599,13 +627,26 @@ function App() {
               </form>
 
               {isAdmin && (
-                <button
-                  type="button"
-                  className="primary-button"
-                  onClick={openNewItemModal}
-                >
-                  Add item
-                </button>
+                <div className="toolbar-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => {
+                      setError("");
+                      setUserModalOpen(true);
+                    }}
+                  >
+                    Create user
+                  </button>
+
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={openNewItemModal}
+                  >
+                    Add item
+                  </button>
+                </div>
               )}
             </section>
 
@@ -860,6 +901,16 @@ function App() {
           }
         }}
         onSubmit={handleSaveItem}
+      />
+      <UserModal
+      open={userModalOpen}
+      loading={creatingUser}
+      onClose={() => {
+        if (!creatingUser) {
+          setUserModalOpen(false);
+        }
+      }}
+      onSubmit={handleCreateUser}
       />
     </div>
   );

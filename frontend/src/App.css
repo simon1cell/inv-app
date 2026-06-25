@@ -345,3 +345,34 @@ code {
   margin: 5px 0 0;
   color: #687386;
 }
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.user-modal {
+  width: min(620px, 100%);
+}
+
+select {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid #bdc7d3;
+  border-radius: 8px;
+  background: white;
+  color: #172033;
+  font: inherit;
+}
+
+select:focus {
+  border-color: #176b55;
+  outline: 3px solid rgba(23, 107, 85, 0.13);
+}
+
+@media (max-width: 720px) {
+  .toolbar-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
