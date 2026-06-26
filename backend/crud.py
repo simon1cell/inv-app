@@ -25,6 +25,53 @@ def get_items(db: Session):
 def get_item(db: Session, item_id: int):
     return db.query(models.Item).filter(models.Item.id == item_id).first()
 
+def get_items_filtered(
+        db: Session,
+        name: str | None = None,
+        storage_id: str | None = None,
+        expiring_before=None,
+        status: str | None = None,
+        category: str | None = None,
+        shelf_num: str | None = None,
+):
+    query = db.query(models.Item)
+
+    if name:
+        query = query.filter(models.Item.item_name.ilike(f"%{name}%"))
+
+    if storage_id: 
+        query = query.filter(models.Item.storage_id == storage_id)
+
+    if expiring_before:
+        query = query.filter(models.Item.expiry_date <= expiring_before)
+
+    if status == "out_of_stock":
+        query = query.filter(models.Item.quantity <= 0)
+
+    if category:
+        query = query.filter(models.Item.category == category)
+
+    if shelf_num:
+        query = query.filter(models.Item.shelf_num == shelf_num)
+        
+    elif status == "critical":
+        query = query.filter(models.Item.quantity > 0, models.Item.quantity <= models.Item.critical_threshold)
+    
+    elif status == "low_stock":
+        query = query.filter(models.Item.quantity <= models.Item.reorder_threshold)
+    
+    elif status == "expiring_soon":
+        today = date.today()
+        soon = today + timedelta(days = 14)
+
+        query = query.filter(
+            models.Item.expiry_date != None,
+            models.Item.expiry_date >= today,
+            models.Item.expiry_date <= soon,
+        )
+
+    return query.all()
+
 def delete_item(db: Session, item_id: int):
     db_item = get_item(db, item_id)
     if db_item is None:
@@ -106,44 +153,6 @@ def create_audit_log(
 
     return log
 
-def get_items_filtered(
-        db: Session,
-        name: str | None = None,
-        storage_id: str | None = None,
-        expiring_before=None,
-        status: str | None = None,
-):
-    query = db.query(models.Item)
-
-    if name:
-        query = query.filter(models.Item.item_name.ilike(f"%{name}%"))
-
-    if storage_id: 
-        query = query.filter(models.Item.storage_id == storage_id)
-
-    if expiring_before:
-        query = query.filter(models.Item.expiry_date <= expiring_before)
-
-    if status == "out_of_stock":
-        query = query.filter(models.Item.quantity <= 0)
-
-    elif status == "critical":
-        query = query.filter(models.Item.quantity > 0, models.Item.quantity <= models.Item.critical_threshold)
-    
-    elif status == "low_stock":
-        query = query.filter(models.Item.quantity <= models.Item.reorder_threshold)
-    
-    elif status == "expiring_soon":
-        today = date.today()
-        soon = today + timedelta(days = 14)
-
-        query = query.filter(
-            models.Item.expiry_date != None,
-            models.Item.expiry_date >= today,
-            models.Item.expiry_date <= soon,
-        )
-
-    return query.all()
 
 def get_audit_logs(db: Session):
     return(

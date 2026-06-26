@@ -25,6 +25,9 @@ class Item(Base):
     brand = Column(String, nullable= False)
     reorder_threshold = Column(Integer, default = 5, nullable=False)
     critical_threshold = Column(Integer, default = 1, nullable=False)
+    category = Column(String, nullable = False, default="Uncategorized")
+    shelf_num = Column(String, nullable=True)
+
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"

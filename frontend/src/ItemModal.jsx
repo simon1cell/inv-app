@@ -14,6 +14,8 @@ function makeForm(item) {
     expiry_date: item?.expiry_date ?? "",
     last_restocked:
       item?.last_restocked ?? todayString(),
+    category: item?.category ?? "Uncategorized",
+    shelf_num: item?.shelf_num ?? "",
     brand: item?.brand ?? "",
     reorder_threshold:
       item?.reorder_threshold ?? 5,
@@ -67,6 +69,11 @@ function ItemModal({
       storage_id: form.storage_id.trim(),
       expiry_date: form.expiry_date || null,
       last_restocked: form.last_restocked,
+      category: form.category.trim() || "Uncategorized",
+      shelf_num:
+        form.shelf_num === ""
+          ? null
+          : Number(form.shelf_num),
       brand: form.brand.trim(),
       reorder_threshold:
         Number(form.reorder_threshold),
@@ -217,6 +224,17 @@ function ItemModal({
           </label>
 
           <label>
+          Shelf number
+          <input
+            name="shelf_num"
+            type="number"
+            min="0"
+            value={form.shelf_num}
+            onChange={updateField}
+          />
+          </label>
+
+          <label>
             Expiry date
             <input
               name="expiry_date"
@@ -248,7 +266,15 @@ function ItemModal({
               required
             />
           </label>
-
+          <label>
+          Category
+          <input
+            name="category"
+            value={form.category}
+            onChange={updateField}
+            required
+          />
+          </label>
           <label>
             Critical threshold
             <input

@@ -110,7 +110,7 @@ function App() {
   const isAdmin = role === "admin";
   const canUseItems = role === "admin" || role === "user";
   const canRestockItems =
-    role === "admin" || role === "restocker";
+    role === "admin";
 
   const summary = useMemo(() => {
     return items.reduce(
@@ -721,19 +721,18 @@ function App() {
                     <thead>
                       <tr>
                         <th>Item</th>
+                        <th>Brand</th>
+                        <th>Category</th>
                         <th>Catalogue #</th>
                         <th>Lot #</th>
-                        <th>Location</th>
+                        <th>Storage</th>
+                        <th>Shelf #</th>
                         <th>Quantity</th>
                         <th>Expiry</th>
                         <th>Status</th>
 
                         {canUseItems && <th>Use</th>}
-
-                        {canRestockItems && (
-                          <th>Restock</th>
-                        )}
-
+                        {isAdmin && <th>Restock</th>}
                         {isAdmin && <th>Admin</th>}
                       </tr>
                     </thead>
@@ -750,43 +749,27 @@ function App() {
                         return (
                           <tr key={itemId}>
                             <td>
-                              <strong>
-                                {item.item_name}
-                              </strong>
-
-                              <span className="cell-detail">
-                                {item.brand || "No brand"}
-                              </span>
+                              <strong>{item.item_name}</strong>
                             </td>
 
-                            <td>
-                              {item.catalogue_num}
-                            </td>
+                            <td>{item.brand || "—"}</td>
+
+                            <td>{item.category || "Uncategorized"}</td>
+
+                            <td>{item.catalogue_num}</td>
+
+                            <td>{item.lot_num ?? "—"}</td>
+
+                            <td>{item.storage_id}</td>
+
+                            <td>{item.shelf_num ?? "—"}</td>
+
+                            <td>{item.quantity}</td>
+
+                            <td>{formatDate(item.expiry_date)}</td>
 
                             <td>
-                              {item.lot_num ?? "—"}
-                            </td>
-
-                            <td>
-                              {item.storage_id}
-                            </td>
-
-                            <td>
-                              {item.quantity}
-                            </td>
-
-                            <td>
-                              {formatDate(
-                                item.expiry_date,
-                              )}
-                            </td>
-
-                            <td>
-                              <span
-                                className={
-                                  status.className
-                                }
-                              >
+                              <span className={status.className}>
                                 {status.text}
                               </span>
                             </td>
@@ -833,7 +816,7 @@ function App() {
                               </td>
                             )}
 
-                            {canRestockItems && (
+                            {isAdmin && (
                               <td>
                                 <button
                                   type="button"

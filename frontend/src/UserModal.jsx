@@ -119,7 +119,6 @@ function UserModal({
               onChange={updateField}
             >
               <option value="user">User</option>
-              <option value="restocker">Restocker</option>
               <option value="admin">Admin</option>
             </select>
           </label>

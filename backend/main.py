@@ -87,7 +87,7 @@ def restock_item(
     item_id: int,
     amount: int = Query(..., gt = 0),
     db: Session = Depends(get_db),
-    current_user = Depends(auth.require_role("admin", "restocker")),
+    current_user = Depends(auth.require_role("admin")),
 ):
     item = crud.restock_item(db, item_id, amount)
 
@@ -134,6 +134,8 @@ def get_items(
     storage_id: str | None = None,
     expiring_before: date | None = None,
     status: str | None = None,
+    category: str | None = None,
+    shelf_num: str | None = None,
     db: Session = Depends(get_db),
     current_user = Depends(auth.get_current_user),
 ):

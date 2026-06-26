@@ -1,10 +1,11 @@
 from datetime import date, datetime
 from pydantic import BaseModel
+from typing import Literal
 
 class UserCreate(BaseModel):
     username: str
     password: str
-    role: str = "user"
+    role: Literal["user", "admin"] = "user"
 
 class UserResponse(BaseModel):
     id: int
@@ -30,6 +31,9 @@ class ItemCreate(BaseModel):
     brand: str
     reorder_threshold: int = 5
     critical_threshold: int = 1
+    category: str = "Uncategorized"
+    shelf_num: str | None = None
+
 
 class ItemResponse(BaseModel):
     id: int
@@ -43,6 +47,8 @@ class ItemResponse(BaseModel):
     brand: str
     reorder_threshold: int = 5
     critical_threshold: int = 1
+    category: str
+    shelf_num: str | None
 
     model_config = {
         "from_attributes": True
@@ -59,6 +65,8 @@ class ItemUpdate(BaseModel):
     brand: str | None = None
     reorder_threshold: int | None = None
     critical_threshold: int | None = None
+    category: str | None = None
+    shelf_num: str | None = None
 
 class DashBoardStats(BaseModel):
     out_of_stock: int
