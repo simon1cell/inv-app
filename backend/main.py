@@ -13,10 +13,8 @@ import auth
 app = FastAPI()
 
 origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://10.3.20.141:5173",
-    "http://172.23.186.98:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
 ]
 
 app.add_middleware(

@@ -32,7 +32,7 @@ class ItemCreate(BaseModel):
     reorder_threshold: int = 5
     critical_threshold: int = 1
     category: str = "Uncategorized"
-    shelf_num: int | None = None
+    shelf_num: str | None = None
 
 
 class ItemResponse(BaseModel):
@@ -47,8 +47,8 @@ class ItemResponse(BaseModel):
     brand: str
     reorder_threshold: int = 5
     critical_threshold: int = 1
-    category: str
-    shelf_num: int | None
+    category: str = "Uncategorized"
+    shelf_num: str | None = None
 
     model_config = {
         "from_attributes": True
@@ -66,7 +66,7 @@ class ItemUpdate(BaseModel):
     reorder_threshold: int | None = None
     critical_threshold: int | None = None
     category: str | None = None
-    shelf_num: int | None = None
+    shelf_num: str | None = None
 
 class ItemTransactionCreate(BaseModel):
     type: str
