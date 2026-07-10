@@ -22,8 +22,12 @@ def create_item(db: Session, item: schemas.ItemCreate):
 def get_items(db: Session):
     return db.query(models.Item).all()
 
-def get_item(db: Session, item_id: int):
-    return db.query(models.Item).filter(models.Item.id == item_id).first()
+def get_item(db: Session, item_id: str):
+    return (
+        db.query(models.Item)
+        .filter(models.Item.catalogue_num == str(item_id))
+        .first()
+    )
 
 def get_items_filtered(
         db: Session,
@@ -72,7 +76,7 @@ def get_items_filtered(
 
     return query.all()
 
-def delete_item(db: Session, item_id: int):
+def delete_item(db: Session, item_id: str):
     db_item = get_item(db, item_id)
     if db_item is None:
         return None
@@ -81,7 +85,7 @@ def delete_item(db: Session, item_id: int):
 
     return db_item
 
-def update_item(db: Session, item_id: int, item_data: schemas.ItemUpdate):
+def update_item(db: Session, item_id: str, item_data: schemas.ItemUpdate):
     item = get_item(db, item_id)
 
     if not item: 
@@ -138,7 +142,7 @@ def create_audit_log(
         db: Session,
         username: str,
         action: str,
-        item_id: int | None = None,
+        item_id: str | None = None,
         details: str | None = None,
         old_quantity: int | None = None,
         change_amount: int | None = None,
@@ -165,7 +169,7 @@ def get_audit_logs(db: Session):
         db.query(models.AuditLog).order_by(models.AuditLog.timestamp.desc()).all()
     )
 
-def use_item(db: Session, item_id: int, amount: int):
+def use_item(db: Session, item_id: str, amount: int):
     item = get_item(db, item_id)
 
     if item is None:
@@ -182,7 +186,7 @@ def use_item(db: Session, item_id: int, amount: int):
     db.refresh(item)
     return item
 
-def restock_item(db: Session, item_id: int, amount: int):
+def restock_item(db: Session, item_id: str, amount: int):
     item = get_item(db, item_id)
 
     if item is None:
@@ -195,6 +199,29 @@ def restock_item(db: Session, item_id: int, amount: int):
     db.commit()
     db.refresh(item)
     return item
+
+def create_transaction(db: Session, item_id: str, change_amount: int):
+    item = get_item(db, item_id)
+
+    if item is None:
+        return None
+
+    old_quantity = item.quantity
+    new_quantity = old_quantity + change_amount
+
+    if new_quantity < 0:
+        return "not_enough_quantity"
+
+    item.quantity = new_quantity
+    item.last_used_at = datetime.now(timezone.utc)
+
+    if change_amount > 0:
+        item.last_restocked = date.today()
+
+    db.commit()
+    db.refresh(item)
+
+    return item, old_quantity, new_quantity
 
 def apply_item_transaction(db, item_id, transaction, username):
     item = get_item(db, item_id)
@@ -295,7 +322,20 @@ def create_order(db: Session, order: schemas.OrderCreate):
     db.commit()
     db.refresh(db_order)
 
-    create_item_from_order_if_missing(db, db_order)
+    # Create item shell only. Do not increase inventory count yet.
+    create_inventory_placeholder_from_order(db, db_order)
+
+    # Only add quantity if the order is already recorded as delivered/received.
+    if order_counts_as_received(db_order):
+        receive_order_into_inventory(db, db_order)
+
+        create_order_event(
+            db,
+            order_id=db_order.id,
+            event_type="DELIVERED",
+            notes="Order created as delivered; inventory updated",
+            created_by=db_order.received_by,
+        )
 
     return db_order
 
@@ -307,7 +347,25 @@ def get_item_by_catalogue_num(db: Session, catalogue_num: str):
     )
 
 
-def create_item_from_order_if_missing(db: Session, order: models.Order):
+def order_counts_as_received(order: models.Order):
+    status = (order.status or "").strip().lower()
+
+    received_statuses = {
+        "delivered",
+        "received",
+        "complete",
+        "completed",
+        "paid",
+    }
+
+    return bool(
+        order.delivery_date
+        or order.received_by
+        or status in received_statuses
+    )
+
+
+def create_inventory_placeholder_from_order(db: Session, order: models.Order):
     if not order.catalog_no:
         return None
 
@@ -321,22 +379,20 @@ def create_item_from_order_if_missing(db: Session, order: models.Order):
     if existing_item is not None:
         return existing_item
 
-    quantity = order.units_ordered or 0
-
     item = models.Item(
         catalogue_num=catalogue_num,
         item_name=order.item_name,
         lot_num=None,
-        quantity=quantity,
-        storage_id="Imported",
+        quantity=0,
+        storage_id="Pending Order",
         expiry_date=order.expected_delivery_date or order.delivery_date,
-        last_restocked=order.delivery_date or order.order_date or date.today(),
+        last_restocked=order.order_date or date.today(),
         brand=order.vendor or "—",
         reorder_threshold=5,
         critical_threshold=1,
         category=order.category or "Uncategorized",
         shelf_num=None,
-        tags="imported,order",
+        tags="order,pending",
     )
 
     db.add(item)
@@ -344,3 +400,276 @@ def create_item_from_order_if_missing(db: Session, order: models.Order):
     db.refresh(item)
 
     return item
+
+
+def receive_order_into_inventory(db: Session, order: models.Order):
+    if not order.catalog_no:
+        return None
+
+    catalogue_num = str(order.catalog_no).strip()
+
+    if not catalogue_num:
+        return None
+
+    units = order.units_ordered or 0
+
+    item = get_item_by_catalogue_num(db, catalogue_num)
+
+    if item is None:
+        item = create_inventory_placeholder_from_order(db, order)
+
+    if item is None:
+        return None
+
+    if units > 0:
+        item.quantity += units
+
+    item.storage_id = item.storage_id if item.storage_id != "Pending Order" else "Imported"
+    item.last_restocked = order.delivery_date or order.order_date or date.today()
+
+    if item.tags:
+        tags = set(tag.strip() for tag in item.tags.split(",") if tag.strip())
+        tags.update(["order", "received"])
+        item.tags = ",".join(sorted(tags))
+    else:
+        item.tags = "order,received"
+
+    db.commit()
+    db.refresh(item)
+
+    return item
+
+def get_order_by_id(db: Session, order_id: int):
+    return db.query(models.Order).filter(models.Order.id == order_id).first()
+
+
+def create_order_event(
+    db: Session,
+    order_id: int,
+    event_type: str,
+    notes: str | None = None,
+    created_by: str | None = None,
+):
+    event = models.OrderEvent(
+        order_id=order_id,
+        event_type=event_type,
+        notes=notes,
+        created_by=created_by,
+    )
+
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+
+    return event
+
+
+def get_order_events(db: Session, order_id: int):
+    return (
+        db.query(models.OrderEvent)
+        .filter(models.OrderEvent.order_id == order_id)
+        .order_by(models.OrderEvent.created_at.desc())
+        .all()
+    )
+
+
+def order_has_event(db: Session, order_id: int, event_type: str):
+    return (
+        db.query(models.OrderEvent)
+        .filter(
+            models.OrderEvent.order_id == order_id,
+            models.OrderEvent.event_type == event_type,
+        )
+        .first()
+        is not None
+    )
+
+
+def create_order_document(
+    db: Session,
+    order_id: int | None,
+    document_type: str,
+    source: str,
+    original_filename: str | None,
+    stored_filename: str | None,
+    file_path: str | None,
+    content_type: str | None,
+    sender: str | None = None,
+    subject: str | None = None,
+    email_message_id: str | None = None,
+    extracted_json: str | None = None,
+    confidence: float | None = None,
+    reviewed: bool = False,
+):
+    document = models.OrderDocument(
+        order_id=order_id,
+        document_type=document_type,
+        source=source,
+        original_filename=original_filename,
+        stored_filename=stored_filename,
+        file_path=file_path,
+        content_type=content_type,
+        sender=sender,
+        subject=subject,
+        email_message_id=email_message_id,
+        extracted_json=extracted_json,
+        confidence=confidence,
+        reviewed=reviewed,
+    )
+
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+
+    return document
+
+
+def get_order_documents(db: Session, order_id: int):
+    return (
+        db.query(models.OrderDocument)
+        .filter(models.OrderDocument.order_id == order_id)
+        .order_by(models.OrderDocument.received_at.desc())
+        .all()
+    )
+
+def delete_order_document(db: Session, document_id: int):
+    document = get_order_document(db, document_id)
+
+    if document is None:
+        return None
+
+    db.delete(document)
+    db.commit()
+
+    return document
+
+def get_order_document(db: Session, document_id: int):
+    return (
+        db.query(models.OrderDocument)
+        .filter(models.OrderDocument.id == document_id)
+        .first()
+    )
+
+def mark_order_confirmed(db: Session, order_id: int, username: str | None = None):
+    order = get_order_by_id(db, order_id)
+
+    if order is None:
+        return None
+
+    order.status = "Confirmed"
+    db.commit()
+    db.refresh(order)
+
+    create_order_event(
+        db,
+        order_id=order.id,
+        event_type="CONFIRMED",
+        notes="Order confirmation uploaded",
+        created_by=username,
+    )
+
+    return order
+
+
+def mark_order_delivered(
+    db: Session,
+    order_id: int,
+    delivery_date_value,
+    received_by: str | None,
+    username: str | None = None,
+    notes: str | None = None,
+):
+    order = get_order_by_id(db, order_id)
+
+    if order is None:
+        return None
+
+    already_delivered = order_has_event(db, order_id, "DELIVERED")
+
+    order.status = "Delivered"
+    order.delivery_date = delivery_date_value or date.today()
+    order.received_by = received_by or username
+
+    db.commit()
+    db.refresh(order)
+
+    if not already_delivered:
+        receive_order_into_inventory(db, order)
+
+        create_order_event(
+            db,
+            order_id=order.id,
+            event_type="DELIVERED",
+            notes=notes or "Order marked delivered; inventory updated",
+            created_by=username,
+        )
+    else:
+        create_order_event(
+            db,
+            order_id=order.id,
+            event_type="UPDATED",
+            notes="Delivery info updated; inventory was not added again",
+            created_by=username,
+        )
+
+    return order
+
+
+def mark_order_invoice_received(
+    db: Session,
+    order_id: int,
+    username: str | None = None,
+):
+    order = get_order_by_id(db, order_id)
+
+    if order is None:
+        return None
+
+    if order.status not in {"Delivered", "Paid"}:
+        order.status = "Invoice Received"
+
+    db.commit()
+    db.refresh(order)
+
+    create_order_event(
+        db,
+        order_id=order.id,
+        event_type="INVOICE_RECEIVED",
+        notes="Invoice uploaded",
+        created_by=username,
+    )
+
+    return order
+
+
+def mark_order_paid(
+    db: Session,
+    order_id: int,
+    date_paid_value,
+    amount_paid: float | None,
+    cc_invoice: str | None,
+    username: str | None = None,
+    notes: str | None = None,
+):
+    order = get_order_by_id(db, order_id)
+
+    if order is None:
+        return None
+
+    order.status = "Paid"
+    order.date_paid = date_paid_value or date.today()
+    order.amount_paid = amount_paid
+    order.cc_invoice = cc_invoice
+
+    db.commit()
+    db.refresh(order)
+
+    create_order_event(
+        db,
+        order_id=order.id,
+        event_type="PAID",
+        notes=notes or "Order marked paid",
+        created_by=username,
+    )
+
+    return order

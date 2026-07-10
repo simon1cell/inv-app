@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import {useEffect, useMemo, useState } from "react";
+import AddItemForm from "@/components/AddItemForm";
 import AddOrderForm from "@/components/AddOrderForm";
 import AuditLogTable from "@/components/AuditLogTable";
 import InventoryTable from "@/components/InventoryTable";
@@ -10,63 +11,126 @@ import StatCard from "@/components/StatCard";
 import Topbar from "@/components/Topbar";
 import UsersPage from "@/components/UsersPage";
 import {
+  createItem,
   createOrderRecord,
   createTransaction,
   createUser,
   deleteItem,
+  deleteOrderDocument,
   deleteUser,
+  downloadOrderDocument,
   exportOrdersExcel,
   getAuditLogs,
   getCurrentUser,
   getItems,
+  getOrderDocuments,
   getOrders,
   getUsers,
   importOrdersExcel,
+  importOrdersExcelAi,
   login,
+  markOrderDelivered,
+  markOrderPaid,
+  uploadOrderDocument,
+  updateItem,
   type CurrentUser,
 } from "@/lib/api";
 import {
   type AuditLog,
   type InventoryItem,
   type Order,
+  type OrderDocumentType,
+  type OrderRecord,
   type UserAccount,
   type View,
-  type OrderRecord,
 } from "@/types/inventory";
+
 function getInitials(username: string) {
-  return username
-    .split(/[.\s_-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("") || "U";
+  return (
+    username
+      .split(/[.\s_-]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join("") || "U"
+  );
+}
+
+function toApiDate(value?: string | null) {
+  if (!value) return null;
+
+  const text = value.trim();
+
+  if (!text) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    return text;
+  }
+
+  const match = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+
+  if (!match) return null;
+
+  const month = match[1].padStart(2, "0");
+  const day = match[2].padStart(2, "0");
+  const year = match[3];
+
+  return `${year}-${month}-${day}`;
+}
+
+function toNumberOrNull(value?: string | number | null) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  const cleaned = value.replace("$", "").replace(",", "").trim();
+  const number = Number(cleaned);
+
+  return Number.isFinite(number) ? number : null;
+}
+
+function withTimeout<T>(promise: Promise<T>, ms = 5000): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      window.setTimeout(
+        () => reject(new Error("Backend took too long to respond")),
+        ms,
+      ),
+    ),
+  ]);
 }
 
 export default function Home() {
   const [view, setView] = useState<View>("inventory");
+  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
 
   const [token, setToken] = useState("");
   const [user, setUser] = useState<CurrentUser | null>(null);
 
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  
   const [orders, setOrders] = useState<OrderRecord[]>([]);
-  const [loadingOrders, setLoadingOrders] = useState(false);
-
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [users, setUsers] = useState<UserAccount[]>([]);
 
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
 
-  const [restoring, setRestoring] = useState(true);
+  const [restoring, setRestoring] = useState(false);
   const [loggingIn, setLoggingIn] = useState(false);
   const [loadingInventory, setLoadingInventory] = useState(false);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+
   const [busyMessage, setBusyMessage] = useState("");
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
 
-  const [users, setUsers] = useState<UserAccount[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [orderSeedItem, setOrderSeedItem] = useState<InventoryItem | null>(null);
 
   const isAdmin = user?.role?.toLowerCase() === "admin";
 
@@ -80,14 +144,38 @@ export default function Home() {
   }, [inventory]);
 
   useEffect(() => {
-    const savedToken = localStorage.getItem("access_token");
+    async function loadSavedSession() {
+      const savedToken = localStorage.getItem("access_token");
 
-    if (!savedToken) {
-      setRestoring(false);
-      return;
+      if (!savedToken) {
+        setRestoring(false);
+        return;
+      }
+
+      setRestoring(true);
+      setError("");
+
+      try {
+        const [currentUser, items] = await withTimeout(
+          Promise.all([getCurrentUser(savedToken), getItems(savedToken)]),
+          5000,
+        );
+
+        setToken(savedToken);
+        setUser(currentUser);
+        setInventory(items);
+      } catch {
+        localStorage.removeItem("access_token");
+        setToken("");
+        setUser(null);
+        setInventory([]);
+        setError("Session expired or backend is unreachable. Please sign in again.");
+      } finally {
+        setRestoring(false);
+      }
     }
 
-    setToken(savedToken);
+    void loadSavedSession();
   }, []);
 
   useEffect(() => {
@@ -98,12 +186,6 @@ export default function Home() {
     }
   }, [isAdmin, user, view]);
 
-  useEffect(() => {
-    if (!token) return;
-
-    void restoreSession(token);
-  }, [token]);
-
   function showToast(message: string) {
     setToast(message);
 
@@ -112,26 +194,72 @@ export default function Home() {
     }, 2500);
   }
 
-  async function restoreSession(activeToken: string) {
-    setRestoring(true);
+  function goToAddItem() {
+    if (!isAdmin) return;
+
+    setEditingItem(null);
+    setView("add-item");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function goToAddOrder(item?: InventoryItem) {
+    if (!isAdmin) return;
+
+    setOrderSeedItem(item ?? null);
+    setView("add-order");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function handleEditItem(item: InventoryItem) {
+    if (!isAdmin) return;
+
+    setEditingItem(item);
+    setView("edit-item");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function refreshInventory(activeToken = token) {
+    if (!activeToken) return;
+
+    setLoadingInventory(true);
     setError("");
 
     try {
-      const [currentUser, items] = await Promise.all([
-        getCurrentUser(activeToken),
-        getItems(activeToken),
-      ]);
-
-      setUser(currentUser);
+      const items = await getItems(activeToken);
       setInventory(items);
     } catch (err) {
-      localStorage.removeItem("access_token");
-      setToken("");
-      setUser(null);
-      setInventory([]);
-      setError(err instanceof Error ? err.message : "Failed to restore session");
+      setError(err instanceof Error ? err.message : "Failed to load inventory");
     } finally {
-      setRestoring(false);
+      setLoadingInventory(false);
+    }
+  }
+
+  async function refreshOrders(activeToken = token) {
+    if (!activeToken || !isAdmin) return;
+
+    setLoadingOrders(true);
+    setError("");
+
+    try {
+      const orderList = await getOrders(activeToken);
+      setOrders(orderList);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load orders");
+    } finally {
+      setLoadingOrders(false);
+    }
+  }
+
+  async function refreshAuditLogs(activeToken = token) {
+    if (!activeToken || !isAdmin) return;
+
+    setError("");
+
+    try {
+      const logs = await getAuditLogs(activeToken);
+      setAuditLogs(logs);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load audit logs");
     }
   }
 
@@ -151,72 +279,35 @@ export default function Home() {
     }
   }
 
-  async function handleDeleteUser(userId: number) {
-    if (!isAdmin) return;
-
-    const confirmed = window.confirm(
-      "Delete this user? This cannot be undone.",
-    );
-
-    if (!confirmed) return;
-
-    setError("");
-
-    try {
-      await deleteUser(token, userId);
-      await refreshUsers();
-      showToast("User deleted");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete user");
-    }
-  }
-  async function refreshInventory(activeToken = token) {
-    if (!activeToken) return;
-
-    setLoadingInventory(true);
-    setError("");
-
-    try {
-      const items = await getItems(activeToken);
-      setInventory(items);
-      setError("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load inventory");
-    } finally {
-      setLoadingInventory(false);
-    }
-  }
-
-  async function refreshAuditLogs(activeToken = token) {
-    if (!activeToken || !isAdmin) return;
-
-    setError("");
-
-    try {
-      const logs = await getAuditLogs(activeToken);
-      setAuditLogs(logs);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load audit logs");
-    }
-  }
-
-  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+  async function handleLogin() {
     event.preventDefault();
 
     setLoggingIn(true);
     setError("");
 
     try {
-      const tokenData = await login(loginUsername, loginPassword);
+      const tokenData = await withTimeout(
+        login(loginUsername, loginPassword),
+        5000,
+      );
+      const accessToken = tokenData.access_token;
 
-      localStorage.setItem("access_token", tokenData.access_token);
+      const [currentUser, items] = await withTimeout(
+        Promise.all([getCurrentUser(accessToken), getItems(accessToken)]),
+        5000,
+      );
 
-      setToken(tokenData.access_token);
+      localStorage.setItem("access_token", accessToken);
+
+      setToken(accessToken);
+      setUser(currentUser);
+      setInventory(items);
       setLoginPassword("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
       setLoggingIn(false);
+      setRestoring(false);
     }
   }
 
@@ -226,7 +317,11 @@ export default function Home() {
     setToken("");
     setUser(null);
     setInventory([]);
+    setOrders([]);
     setAuditLogs([]);
+    setUsers([]);
+    setEditingItem(null);
+    setOrderSeedItem(null);
     setView("inventory");
     setError("");
   }
@@ -249,70 +344,40 @@ export default function Home() {
 
     if (nextView === "orders") {
       void refreshOrders();
-}
-  }
-  
-  function goToAddForm() {
-    if(!isAdmin) return;
-
-    setView("add");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   }
 
-  async function handleQuantityChange(
-    item: InventoryItem,
-    nextQuantity: number,
-  ) {
-    if (!Number.isInteger(nextQuantity) || nextQuantity < 0) {
-      setError("Quantity must be a whole number that is 0 or higher.");
-      return;
-    }
-
-    const changeAmount = nextQuantity - item.quantity;
-
-    if (changeAmount === 0) return;
-
-    if (changeAmount > 0 && !isAdmin) {
-      setError("Only admins can increase item quantity.");
-      return;
-    }
-
-    setBusyMessage(`Updating ${item.itemName}...`);
+  async function handleCreateItem(payload: Parameters<typeof createItem>[1]) {
     setError("");
 
     try {
-      await createTransaction(token, item.id, changeAmount);
+      await createItem(token, payload);
       await refreshInventory();
 
-      if (view === "audit") {
-        await refreshAuditLogs();
-      }
-
-      showToast("Quantity updated");
+      showToast("Inventory item added");
+      setView("inventory");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update quantity");
-    } finally {
-      setBusyMessage("");
+      setError(err instanceof Error ? err.message : "Failed to add item");
     }
   }
 
-  async function handleCreateUser(payload: {
-    username: string;
-    password: string;
-    role: "user" | "admin";
-  }) {
-    if (!isAdmin) return;
+  async function handleUpdateItem(payload: Parameters<typeof updateItem>[2]) {
+    if (!editingItem) return;
 
     setError("");
 
     try {
-      await createUser(token, payload);
-      await refreshUsers();
-      showToast(`Created ${payload.role} account`);
+      await updateItem(token, editingItem.id, payload);
+      await refreshInventory();
+
+      showToast("Inventory item updated");
+      setEditingItem(null);
+      setView("inventory");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create user");
+      setError(err instanceof Error ? err.message : "Failed to update item");
     }
   }
+
   async function handleDeleteItem(itemId: string) {
     if (!isAdmin) return;
 
@@ -338,19 +403,63 @@ export default function Home() {
       setBusyMessage("");
     }
   }
-  async function refreshOrders(activeToken = token) {
-    if (!activeToken || !isAdmin) return;
 
-    setLoadingOrders(true);
+  async function handleQuantityChange(item: InventoryItem, nextQuantity: number) {
+    const changeAmount = nextQuantity - item.quantity;
+
+    if (changeAmount === 0) return;
+
     setError("");
 
     try {
-      const orderList = await getOrders(activeToken);
-      setOrders(orderList);
+      await createTransaction(token, item.id, changeAmount);
+      await refreshInventory();
+
+      if (view === "audit") {
+        await refreshAuditLogs();
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load orders");
-    } finally {
-      setLoadingOrders(false);
+      setError(err instanceof Error ? err.message : "Failed to update quantity");
+    }
+  }
+
+  async function handleSubmitOrder(order: Order) {
+    setError("");
+
+    try {
+      await createOrderRecord(token, {
+        order_date: toApiDate(order.dateOrdered),
+        order_placed_by: order.orderPlacedBy || user?.username || null,
+        po_number: order.poNumber || null,
+        vendor: order.supplier,
+        category: order.category || null,
+        catalog_no: order.catalogueNum,
+        item_name: order.itemName,
+        units_ordered: toNumberOrNull(order.unitsOrdered),
+        price_per_unit: toNumberOrNull(order.pricePerUnit),
+        total_price: toNumberOrNull(order.totalPrice),
+        final_price: toNumberOrNull(order.finalPrice || order.totalPrice),
+        availability: order.availability || null,
+        expected_delivery_date: toApiDate(
+          order.expectedDeliveryDate || order.expiryDate,
+        ),
+        order_number: order.orderNumber || null,
+        delivery_date: toApiDate(order.dateDelivered),
+        status: order.status || (order.delivered ? "Delivered" : "Ordered"),
+        received_by: order.receivedBy || null,
+        date_paid: toApiDate(order.datePaid),
+        amount_paid: toNumberOrNull(order.amountPaid),
+        cc_invoice: order.ccInvoice || null,
+      });
+
+      await refreshOrders();
+      await refreshInventory();
+
+      showToast("Order added");
+      setOrderSeedItem(null);
+      setView("orders");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add order");
     }
   }
 
@@ -361,9 +470,24 @@ export default function Home() {
       await importOrdersExcel(token, file);
       await refreshOrders();
       await refreshInventory();
-      showToast("Orders imported and inventory updated");
+
+      showToast("Orders imported");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to import orders");
+    }
+  }
+
+  async function handleImportOrdersAi(file: File) {
+    setError("");
+
+    try {
+      await importOrdersExcelAi(token, file);
+      await refreshOrders();
+      await refreshInventory();
+
+      showToast("AI cleaned orders imported");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to AI import orders");
     }
   }
 
@@ -383,83 +507,123 @@ export default function Home() {
     try {
       await exportOrdersExcel(token, ids);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to export selected orders");
+      setError(
+        err instanceof Error ? err.message : "Failed to export selected orders",
+      );
     }
   }
 
-  function handleEditItem(item: InventoryItem) {
-    showToast(`Edit item modal next: ${item.itemName}`);
-  }
-  function toApiDate(value?: string | null) {
-    if (!value) return null;
-
-    const text = value.trim();
-
-    if (!text) return null;
-
-    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
-      return text;
-    }
-
-    const match = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
-
-    if (!match) return null;
-
-    const month = match[1].padStart(2, "0");
-    const day = match[2].padStart(2, "0");
-    const year = match[3];
-
-    return `${year}-${month}-${day}`;
-  }
-
-  function toNumberOrNull(value?: string | number | null) {
-    if (value === null || value === undefined || value === "") {
-      return null;
-    }
-
-    if (typeof value === "number") {
-      return Number.isFinite(value) ? value : null;
-    }
-
-    const cleaned = value.replace("$", "").replace(",", "").trim();
-    const number = Number(cleaned);
-
-    return Number.isFinite(number) ? number : null;
-  }
-  async function handleSubmitOrder(order: Order) {
+  async function handleUploadOrderDocument(
+    orderId: number,
+    documentType: OrderDocumentType,
+    file: File,
+  ) {
     setError("");
 
     try {
-      await createOrderRecord(token, {
-        order_date: toApiDate(order.dateOrdered),
-        order_placed_by: user?.username ?? null,
-        po_number: null,
-        vendor: order.supplier,
-        category: "Uncategorized",
-        catalog_no: order.catalogueNum,
-        item_name: order.itemName,
-        units_ordered: toNumberOrNull(order.unitsOrdered),
-        price_per_unit: toNumberOrNull(order.pricePerUnit),
-        total_price: toNumberOrNull(order.totalPrice),
-        final_price: toNumberOrNull(order.totalPrice),
-        availability: null,
-        expected_delivery_date: toApiDate(order.expiryDate),
-        order_number: null,
-        delivery_date: order.delivered ? toApiDate(order.dateDelivered) : null,
-        status: order.delivered ? "Delivered" : "Ordered",
-        received_by: order.delivered ? user?.username ?? null : null,
-        date_paid: null,
-        amount_paid: null,
-        cc_invoice: null,
+      await uploadOrderDocument(token, orderId, documentType, file);
+      await refreshOrders();
+      await refreshInventory();
+
+      showToast(`${documentType} uploaded`);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to upload order document",
+      );
+    }
+  }
+
+  async function handleGetOrderDocuments(orderId: number) {
+    return getOrderDocuments(token, orderId);
+  }
+
+  async function handleDownloadOrderDocument(
+    documentId: number,
+    filename: string,
+  ) {
+    await downloadOrderDocument(token, documentId, filename);
+  }
+
+  async function handleDeleteOrderDocument(documentId: number) {
+    await deleteOrderDocument(token, documentId);
+    showToast("Document deleted");
+  }
+
+  async function handleMarkOrderDelivered(orderId: number) {
+    setError("");
+
+    try {
+      await markOrderDelivered(token, orderId, {
+        delivery_date: new Date().toISOString().slice(0, 10),
+        received_by: user?.username ?? null,
+        notes: "Marked delivered from Orders page",
       });
 
       await refreshOrders();
       await refreshInventory();
 
-      showToast("Order added and inventory updated");
-      setView("orders");
+      showToast("Order marked delivered and inventory updated");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add order");
+      setError(
+        err instanceof Error ? err.message : "Failed to mark order delivered",
+      );
+    }
+  }
+
+  async function handleMarkOrderPaid(orderId: number) {
+    setError("");
+
+    try {
+      await markOrderPaid(token, orderId, {
+        date_paid: new Date().toISOString().slice(0, 10),
+        amount_paid: null,
+        cc_invoice: null,
+        notes: "Marked paid from Orders page",
+      });
+
+      await refreshOrders();
+
+      showToast("Order marked paid");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to mark order paid");
+    }
+  }
+
+  async function handleCreateUser(payload: {
+    username: string;
+    password: string;
+    role: "user" | "admin";
+  }) {
+    if (!isAdmin) return;
+
+    setError("");
+
+    try {
+      await createUser(token, payload);
+      await refreshUsers();
+
+      showToast(`Created ${payload.role} account`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create user");
+    }
+  }
+
+  async function handleDeleteUser(userId: number) {
+    if (!isAdmin) return;
+
+    const confirmed = window.confirm("Delete this user? This cannot be undone.");
+
+    if (!confirmed) return;
+
+    setError("");
+
+    try {
+      await deleteUser(token, userId);
+      await refreshUsers();
+
+      showToast("User deleted");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete user");
     }
   }
 
@@ -474,7 +638,13 @@ export default function Home() {
   if (!user) {
     return (
       <main className="login-page">
-        <form className="login-card" onSubmit={handleLogin}>
+        <form
+          className="login-card"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleLogin();
+          }}
+        >
           <div className="brand">
             <div className="mark" />
             <div>
@@ -511,7 +681,12 @@ export default function Home() {
 
           {error && <p className="error-message">{error}</p>}
 
-          <button type="submit" className="btn primary" disabled={loggingIn}>
+          <button
+            type="button"
+            className="btn primary"
+            disabled={loggingIn}
+            onClick={() => void handleLogin()}
+          >
             {loggingIn ? "Signing in..." : "Sign in"}
           </button>
         </form>
@@ -521,11 +696,7 @@ export default function Home() {
 
   return (
     <div className="app">
-      <Sidebar
-        view={view}
-        isAdmin={isAdmin}
-        onViewChange={handleViewChange}
-      />
+      <Sidebar view={view} isAdmin={isAdmin} onViewChange={handleViewChange} />
 
       <main className="main">
         <Topbar
@@ -537,7 +708,9 @@ export default function Home() {
 
         {error && <p className="error-banner">{error}</p>}
         {busyMessage && <p className="loading-banner">{busyMessage}</p>}
-        {loadingInventory && <p className="loading-banner">Loading inventory...</p>}
+        {loadingInventory && (
+          <p className="loading-banner">Loading inventory...</p>
+        )}
 
         {view === "inventory" && (
           <section className="view active">
@@ -571,19 +744,38 @@ export default function Home() {
               />
             </div>
 
-            <p className="section-tag">
-              INVENTORY
-            </p>
+            <p className="section-tag">INVENTORY</p>
 
             <InventoryTable
               items={inventory}
               isAdmin={isAdmin}
-              onAddItem={goToAddForm}
+              onAddItem={goToAddItem}
               onEditItem={handleEditItem}
               onDeleteItem={handleDeleteItem}
               onQuantityChange={handleQuantityChange}
             />
           </section>
+        )}
+
+        {isAdmin && view === "orders" && (
+          <OrdersPage
+            orders={orders}
+            inventoryItems={inventory}
+            loading={loadingOrders}
+            onRefresh={() => void refreshOrders()}
+            onAddOrder={() => goToAddOrder()}
+            onAddOrderFromInventory={(item) => goToAddOrder(item)}
+            onImportExcel={handleImportOrders}
+            onImportExcelAi={handleImportOrdersAi}
+            onExportAll={handleExportAllOrders}
+            onExportSelected={handleExportSelectedOrders}
+            onUploadDocument={handleUploadOrderDocument}
+            onMarkDelivered={handleMarkOrderDelivered}
+            onMarkPaid={handleMarkOrderPaid}
+            onGetDocuments={handleGetOrderDocuments}
+            onDownloadDocument={handleDownloadOrderDocument}
+            onDeleteDocument={handleDeleteOrderDocument}
+          />
         )}
 
         {isAdmin && view === "users" && (
@@ -597,26 +789,39 @@ export default function Home() {
           />
         )}
 
-        {isAdmin && view === "orders" && (
-          <OrdersPage
-            orders={orders}
-            loading={loadingOrders}
-            onRefresh={() => void refreshOrders()}
-            onImportExcel={handleImportOrders}
-            onExportAll={handleExportAllOrders}
-            onExportSelected={handleExportSelectedOrders}
+        {isAdmin && view === "audit" && <AuditLogTable logs={auditLogs} />}
+
+        {isAdmin && view === "add-item" && (
+          <AddItemForm
+            mode="create"
+            onBack={() => setView("inventory")}
+            onSubmitItem={handleCreateItem}
           />
         )}
 
-        {isAdmin && view === "add" && (
+        {isAdmin && view === "edit-item" && editingItem && (
+          <AddItemForm
+            mode="edit"
+            item={editingItem}
+            onBack={() => {
+              setEditingItem(null);
+              setView("inventory");
+            }}
+            onSubmitItem={handleUpdateItem}
+          />
+        )}
+
+        {isAdmin && view === "add-order" && (
           <AddOrderForm
-            onBack={() => setView("orders")}
+            initialItem={orderSeedItem}
+            inventoryItems={inventory}
+            onBack={() => {
+              setOrderSeedItem(null);
+              setView("orders");
+            }}
             onSubmitOrder={handleSubmitOrder}
           />
         )}
-
-        {isAdmin && view === "audit" && <AuditLogTable logs={auditLogs} />}
-
       </main>
 
       <div className={toast ? "toast show" : "toast"}>

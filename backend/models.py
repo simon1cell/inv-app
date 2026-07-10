@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, DateTime, ForeignKey, Float
+from sqlalchemy import Column, Integer, String, DateTime, Float, Boolean, ForeignKey, Text, Date
 from database import Base
 from datetime import datetime, timezone
 
@@ -70,3 +70,44 @@ class Order(Base):
     date_paid = Column(Date, nullable=True)
     amount_paid = Column(Float, nullable=True)
     cc_invoice = Column(String, nullable=True)
+
+class OrderDocument(Base):
+    __tablename__ = "order_documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True, index=True)
+
+    document_type = Column(String, nullable=False)
+    # confirmation, invoice, delivery, packing_slip, shipping, other
+
+    source = Column(String, nullable=False, default="manual")
+    # manual, email, ai_import
+
+    sender = Column(String, nullable=True)
+    subject = Column(String, nullable=True)
+    email_message_id = Column(String, nullable=True, unique=True)
+
+    original_filename = Column(String, nullable=True)
+    stored_filename = Column(String, nullable=True)
+    file_path = Column(String, nullable=True)
+    content_type = Column(String, nullable=True)
+
+    extracted_json = Column(Text, nullable=True)
+    confidence = Column(Float, nullable=True)
+
+    reviewed = Column(Boolean, nullable=False, default=False)
+    received_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class OrderEvent(Base):
+    __tablename__ = "order_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False, index=True)
+
+    event_type = Column(String, nullable=False)
+    # CREATED, CONFIRMED, DOCUMENT_UPLOADED, DELIVERED, INVOICE_RECEIVED, PAID
+
+    notes = Column(Text, nullable=True)
+    created_by = Column(String, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

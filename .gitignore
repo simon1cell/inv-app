@@ -32,3 +32,6 @@ yarn-error.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local uploaded order documents
+backend/uploads/

@@ -3,6 +3,11 @@ import {
   type AuditLog,
   type InventoryItem,
 } from "@/types/inventory";
+import type {
+  OrderDocument,
+  OrderDocumentType,
+  OrderEvent,
+} from "@/types/inventory";
 import type { UserAccount } from "@/types/inventory";
 import type { OrderRecord } from "@/types/inventory";
 
@@ -256,6 +261,37 @@ export async function createItem(
   return mapItem(item);
 }
 
+export async function updateItem(
+  token: string,
+  itemId: string,
+  payload: {
+    catalogue_num?: string;
+    item_name?: string;
+    lot_num?: number | null;
+    quantity?: number;
+    storage_id?: string;
+    expiry_date?: string | null;
+    last_restocked?: string;
+    brand?: string | null;
+    reorder_threshold?: number;
+    critical_threshold?: number;
+    category?: string;
+    shelf_num?: number | null;
+    tags?: string;
+  },
+) {
+  const item = await apiRequest<BackendItem>(
+    `/items/${encodeURIComponent(itemId)}`,
+    {
+      token,
+      method: "PUT",
+      json: payload,
+    },
+  );
+
+  return mapItem(item);
+}
+
 export async function createTransaction(
   token: string,
   itemId: string,
@@ -421,4 +457,207 @@ export async function exportOrdersExcel(token: string, ids?: number[]) {
   link.remove();
 
   window.URL.revokeObjectURL(url);
+}
+
+export async function importOrdersExcelAi(token: string, file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(`${API_BASE_URL}/orders/import-ai`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error(await getErrorMessage(response));
+  }
+
+  const orders = (await response.json()) as BackendOrder[];
+  return orders.map(mapOrder);
+}
+
+type BackendOrderDocument = {
+  id: number;
+  order_id: number | null;
+  document_type: string;
+  source: string;
+  sender: string | null;
+  subject: string | null;
+  original_filename: string | null;
+  content_type: string | null;
+  confidence: number | null;
+  reviewed: boolean;
+  received_at: string;
+};
+
+function mapOrderDocument(document: BackendOrderDocument): OrderDocument {
+  return {
+    id: document.id,
+    orderId: document.order_id,
+    documentType: document.document_type,
+    source: document.source,
+    sender: document.sender,
+    subject: document.subject,
+    originalFilename: document.original_filename,
+    contentType: document.content_type,
+    confidence: document.confidence,
+    reviewed: document.reviewed,
+    receivedAt: document.received_at,
+  };
+}
+
+type BackendOrderEvent = {
+  id: number;
+  order_id: number;
+  event_type: string;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+function mapOrderEvent(event: BackendOrderEvent): OrderEvent {
+  return {
+    id: event.id,
+    orderId: event.order_id,
+    eventType: event.event_type,
+    notes: event.notes,
+    createdBy: event.created_by,
+    createdAt: event.created_at,
+  };
+}
+
+export async function uploadOrderDocument(
+  token: string,
+  orderId: number,
+  documentType: OrderDocumentType,
+  file: File,
+) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(
+    `${API_BASE_URL}/orders/${orderId}/documents?document_type=${documentType}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await getErrorMessage(response));
+  }
+
+  const doc = (await response.json()) as BackendOrderDocument;
+  return mapOrderDocument(doc);
+}
+
+export async function markOrderDelivered(
+  token: string,
+  orderId: number,
+  payload: {
+    delivery_date?: string | null;
+    received_by?: string | null;
+    notes?: string | null;
+  } = {},
+) {
+  const order = await apiRequest<BackendOrder>(
+    `/orders/${orderId}/mark-delivered`,
+    {
+      token,
+      method: "POST",
+      json: payload,
+    },
+  );
+
+  return mapOrder(order);
+}
+
+export async function markOrderPaid(
+  token: string,
+  orderId: number,
+  payload: {
+    date_paid?: string | null;
+    amount_paid?: number | null;
+    cc_invoice?: string | null;
+    notes?: string | null;
+  } = {},
+) {
+  const order = await apiRequest<BackendOrder>(
+    `/orders/${orderId}/mark-paid`,
+    {
+      token,
+      method: "POST",
+      json: payload,
+    },
+  );
+
+  return mapOrder(order);
+}
+
+export async function getOrderEvents(token: string, orderId: number) {
+  const events = await apiRequest<BackendOrderEvent[]>(
+    `/orders/${orderId}/events`,
+    {
+      token,
+      method: "GET",
+    },
+  );
+
+  return events.map(mapOrderEvent);
+}
+
+export async function getOrderDocuments(token: string, orderId: number) {
+  const documents = await apiRequest<BackendOrderDocument[]>(
+    `/orders/${orderId}/documents`,
+    { token },
+  );
+
+  return documents.map(mapOrderDocument);
+}
+
+export async function downloadOrderDocument(
+  token: string,
+  documentId: number,
+  filename: string,
+) {
+  const response = await fetch(
+    `${API_BASE_URL}/order-documents/${documentId}/download`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error("Failed to download document");
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename || `order-document-${documentId}`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  window.URL.revokeObjectURL(url);
+}
+
+export async function deleteOrderDocument(token: string, documentId: number) {
+  return apiRequest<{ message: string }>(
+    `/order-documents/${documentId}`,
+    {
+      token,
+      method: "DELETE",
+    },
+  );
 }

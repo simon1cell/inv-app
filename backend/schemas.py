@@ -134,3 +134,46 @@ class OrderResponse(OrderBase):
     model_config = {
         "from_attributes": True
     }
+
+class OrderDocumentResponse(BaseModel):
+    id: int
+    order_id: int | None
+    document_type: str
+    source: str
+    sender: str | None = None
+    subject: str | None = None
+    original_filename: str | None = None
+    content_type: str | None = None
+    confidence: float | None = None
+    reviewed: bool
+    received_at: datetime
+
+    model_config = {
+        "from_attributes": True
+    }
+
+
+class OrderEventResponse(BaseModel):
+    id: int
+    order_id: int
+    event_type: str
+    notes: str | None = None
+    created_by: str | None = None
+    created_at: datetime
+
+    model_config = {
+        "from_attributes": True
+    }
+
+
+class MarkDeliveredRequest(BaseModel):
+    delivery_date: date | None = None
+    received_by: str | None = None
+    notes: str | None = None
+
+
+class MarkPaidRequest(BaseModel):
+    date_paid: date | None = None
+    amount_paid: float | None = None
+    cc_invoice: str | None = None
+    notes: str | None = None

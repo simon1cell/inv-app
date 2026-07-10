@@ -6,18 +6,24 @@ from datetime import datetime, timedelta, timezone, date
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import jwt
 from io import BytesIO
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from openpyxl import Workbook, load_workbook
+from ai_import import clean_orders_with_gemini
 import models
 import schemas
 import crud
 import auth
+import re
+from pathlib import Path
+from uuid import uuid4
 
 app = FastAPI()
 
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://172.23.186.98:3000",
+    "http://10.3.20.141:3000",
 ]
 
 app.add_middleware(
@@ -83,10 +89,32 @@ HEADER_ALIASES = {
     "cc invoice": "cc_invoice",
 }
 
+UPLOAD_ROOT = Path("uploads/order_documents")
+UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 
 def normalize_header(value):
     return str(value or "").strip().lower()
 
+def excel_rows_for_ai(sheet):
+    rows = []
+
+    for row_number, row in enumerate(sheet.iter_rows(values_only=True), start=1):
+        values = []
+
+        for col_index, value in enumerate(row, start=1):
+            if value not in (None, ""):
+                values.append({
+                    "column": col_index,
+                    "value": str(value),
+                })
+
+        if values:
+            rows.append({
+                "row_number": row_number,
+                "values": values,
+            })
+
+    return rows
 
 def parse_date(value):
     if value in (None, ""):
@@ -98,6 +126,12 @@ def parse_date(value):
     if isinstance(value, date):
         return value
 
+    # Excel serial date support, e.g. 46210
+    if isinstance(value, (int, float)):
+        if 20000 <= value <= 60000:
+            return date(1899, 12, 30) + timedelta(days=int(value))
+        return None
+
     text = str(value).strip()
 
     for fmt in ("%Y-%m-%d", "%m-%d-%Y", "%m/%d/%Y"):
@@ -108,6 +142,118 @@ def parse_date(value):
 
     return None
 
+def strip_list_prefix(text: str, index: int | None = None):
+    text = str(text or "").strip()
+
+    if not text:
+        return ""
+
+    # Handles: 1. ABC, 1) ABC, 1 ABC
+    text = re.sub(r"^\s*\d+\s*[\.\)]\s*", "", text)
+    text = re.sub(r"^\s*\d+\s+", "", text)
+
+    # Handles glued numbering like 1FEREP0402, 2FERR0192
+    # Avoids touching normal catalog numbers unless the row clearly looks listed.
+    if index is not None:
+        expected = str(index + 1)
+
+        if text.startswith(expected) and len(text) > len(expected):
+            rest = text[len(expected):]
+
+            if rest and rest[0].isalpha():
+                text = rest.strip()
+
+    return text.strip(" -;\t")
+
+
+def split_multivalue_cell(value):
+    if value in (None, ""):
+        return []
+
+    text = str(value).replace("\r\n", "\n").replace("\r", "\n").strip()
+
+    if not text:
+        return []
+
+    parts = [part.strip() for part in text.split("\n") if part and str(part).strip()]
+
+    cleaned = []
+
+    for index, part in enumerate(parts):
+        item = strip_list_prefix(part, index)
+
+        if item:
+            cleaned.append(item)
+
+    return cleaned
+
+
+def split_units(value, count: int):
+    if count <= 1:
+        parsed = parse_int(value)
+        return [parsed]
+
+    if value in (None, ""):
+        return [None] * count
+
+    text = str(value).strip()
+
+    # Handles "1\n2\n1"
+    if "\n" in text:
+        parts = split_multivalue_cell(text)
+        nums = [parse_int(part) for part in parts]
+
+        if len(nums) == count:
+            return nums
+
+    # Handles exported collapsed values like "121" for 3 rows -> [1, 2, 1]
+    if text.isdigit() and len(text) == count and count > 1:
+        return [int(char) for char in text]
+
+    # Avoid duplicating aggregate unit counts across every split row.
+    return [None] * count
+
+
+def expand_order_payload(raw_payload: dict, raw_units_value):
+    catalog_parts = split_multivalue_cell(raw_payload.get("catalog_no"))
+    item_parts = split_multivalue_cell(raw_payload.get("item_name"))
+
+    # For this app, rows without catalog numbers are not useful for inventory.
+    if not catalog_parts:
+        return []
+
+    count = len(catalog_parts)
+    unit_parts = split_units(raw_units_value, count)
+
+    expanded = []
+
+    for index, catalog_no in enumerate(catalog_parts):
+        item_name = raw_payload.get("item_name")
+
+        if len(item_parts) == count:
+            item_name = item_parts[index]
+
+        item_name = clean_string(item_name)
+
+        if not item_name:
+            continue
+
+        child = dict(raw_payload)
+        child["catalog_no"] = catalog_no
+        child["item_name"] = item_name
+        child["units_ordered"] = unit_parts[index] if index < len(unit_parts) else None
+
+        # If a row has multiple products but only one aggregate price,
+        # keep price on first child only so exports do not multiply totals.
+        if count > 1 and index > 0:
+            child["price_per_unit"] = None
+            child["total_price"] = None
+            child["final_price"] = None
+            child["amount_paid"] = None
+
+        expanded.append(child)
+
+    return expanded
 
 def parse_float(value):
     if value in (None, ""):
@@ -462,35 +608,49 @@ def dashboard(
 ):
     return crud.get_dashboard_stats(db)
 
-@app.post("/items/{item_id}/transactions", response_model=schemas.ItemResponse)
-def create_item_transaction(
+@app.post("/items/{item_id}/transaction", response_model=schemas.ItemResponse)
+def create_transaction(
     item_id: str,
-    transaction: schemas.ItemTransactionCreate,
+    change_amount: int = Query(...),
     db: Session = Depends(get_db),
-    current_user = Depends(auth.get_current_user),
+    current_user=Depends(auth.require_role("admin", "user")),
 ):
-    if transaction.type == "use":
-        if current_user.role not in ["admin", "user"]:
-            raise HTTPException(status_code=403, detail="Not authorized")
-    elif transaction.type == "restock":
-        if current_user.role not in ["admin"]:
-            raise HTTPException(status_code=403, detail="Not authorized")
-    else:
-        raise HTTPException(status_code=400, detail="Invalid transaction type")
-    
-    item = crud.apply_item_transaction(
-        db, item_id, transaction, current_user.username,
+    if change_amount == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Transaction amount cannot be zero",
+        )
+
+    if change_amount > 0 and current_user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins can increase quantity",
+        )
+
+    result = crud.create_transaction(db, item_id, change_amount)
+
+    if result is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    if result == "not_enough_quantity":
+        raise HTTPException(
+            status_code=400,
+            detail="Not enough quantity available",
+        )
+
+    item, old_quantity, new_quantity = result
+
+    crud.create_audit_log(
+        db,
+        username=current_user.username,
+        action="TRANSACTION",
+        item_id=item.id,
+        details=f"Changed {item.item_name} by {change_amount}",
+        old_quantity=old_quantity,
+        change_amount=change_amount,
+        new_quantity=new_quantity,
     )
 
-    if item is None:
-        raise HTTPException(status_code=404, detail="Item not found")
-    
-    if item == "invalid amount":
-        raise HTTPException(status_code=400, detail="Amount must be greater than 0")
-    
-    if item == "not enough quantity":
-        raise HTTPException(status_code=400, detail="Not enough quantity")
-    
     return item
 
 @app.get("/orders/", response_model=list[schemas.OrderResponse])
@@ -500,14 +660,27 @@ def list_orders(
 ):
     return crud.get_orders(db)
 
-
 @app.post("/orders/", response_model=schemas.OrderResponse)
 def create_order(
     order: schemas.OrderCreate,
     db: Session = Depends(get_db),
     current_user=Depends(auth.require_role("admin")),
 ):
-    return crud.create_order(db, order)
+    created_order = crud.create_order(db, order)
+
+    crud.create_audit_log(
+        db,
+        username=current_user.username,
+        action="CREATE_ORDER",
+        item_id=None,
+        details=(
+            f"Created order #{created_order.id}: "
+            f"{created_order.item_name} "
+            f"({created_order.catalog_no}) from {created_order.vendor or 'unknown vendor'}"
+        ),
+    )
+
+    return created_order
 
 
 @app.post("/orders/import", response_model=list[schemas.OrderResponse])
@@ -610,10 +783,28 @@ async def import_orders(
         if is_service_order(raw_payload):
             continue
 
-        payload = schemas.OrderCreate(**raw_payload)
+        expanded_payloads = expand_order_payload(
+            raw_payload,
+            value_for("units_ordered"),
+        )
 
-        created_orders.append(crud.create_order(db, payload))
+        for expanded_payload in expanded_payloads:
+            if is_service_order(expanded_payload):
+                continue
 
+            payload = schemas.OrderCreate(**expanded_payload)
+
+            created_orders.append(crud.create_order(db, payload))
+
+    if created_orders:
+        crud.create_audit_log(
+            db,
+            username=current_user.username,
+            action="IMPORT_ORDERS",
+            item_id=None,
+            details=f"Imported {len(created_orders)} orders from {filename}",
+        )
+    
     return created_orders
 
 
@@ -655,4 +846,319 @@ def export_orders(
         headers={
             "Content-Disposition": 'attachment; filename="orders.xlsx"'
         },
+    )
+
+@app.post("/orders/import-ai", response_model=list[schemas.OrderResponse])
+async def import_orders_ai(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(auth.require_role("admin")),
+):
+    filename = file.filename or ""
+
+    if not filename.endswith((".xlsx", ".xlsm")):
+        raise HTTPException(status_code=400, detail="Please upload an .xlsx file")
+
+    content = await file.read()
+    workbook = load_workbook(BytesIO(content), data_only=True)
+    sheet = workbook.active
+
+    ai_rows = excel_rows_for_ai(sheet)
+
+    created_orders = []
+
+    chunk_size = 40
+
+    for start in range(0, len(ai_rows), chunk_size):
+        chunk = ai_rows[start:start + chunk_size]
+
+        cleaned = clean_orders_with_gemini(chunk)
+
+        for cleaned_order in cleaned.orders:
+            if is_service_order(cleaned_order.model_dump()):
+                continue
+
+            try:
+                payload = schemas.OrderCreate(**cleaned_order.model_dump())
+            except Exception:
+                continue
+
+            created_orders.append(crud.create_order(db, payload))
+
+    if created_orders:
+        crud.create_audit_log(
+            db,
+            username=current_user.username,
+            action="AI_IMPORT_ORDERS",
+            item_id=None,
+            details=f"AI imported {len(created_orders)} orders from {filename}",
+        )
+    return created_orders
+
+@app.get(
+    "/orders/{order_id}/documents",
+    response_model=list[schemas.OrderDocumentResponse],
+)
+def list_order_documents(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(auth.require_role("admin")),
+):
+    order = crud.get_order_by_id(db, order_id)
+
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    return crud.get_order_documents(db, order_id)
+
+@app.delete("/order-documents/{document_id}")
+def delete_order_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(auth.require_role("admin")),
+):
+    document = crud.get_order_document(db, document_id)
+
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    file_path = Path(document.file_path) if document.file_path else None
+    original_filename = document.original_filename
+    order_id = document.order_id
+
+    crud.delete_order_document(db, document_id)
+
+    if file_path and file_path.exists():
+        file_path.unlink()
+
+    crud.create_audit_log(
+        db,
+        username=current_user.username,
+        action="DELETE_ORDER_DOCUMENT",
+        item_id=None,
+        details=f"Deleted document {original_filename or document_id} from order #{order_id}",
+    )
+
+    return {"message": "Document deleted"}
+
+@app.post(
+    "/orders/{order_id}/documents",
+    response_model=schemas.OrderDocumentResponse,
+)
+async def upload_order_document(
+    order_id: int,
+    document_type: str = Query(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(auth.require_role("admin")),
+):
+    order = crud.get_order_by_id(db, order_id)
+
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    allowed_types = {
+        "confirmation",
+        "invoice",
+        "delivery",
+        "packing_slip",
+        "shipping",
+        "other",
+    }
+
+    if document_type not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"document_type must be one of: {', '.join(sorted(allowed_types))}",
+        )
+
+    original_filename = file.filename or "upload"
+    suffix = Path(original_filename).suffix
+    stored_filename = f"{uuid4().hex}{suffix}"
+    file_path = UPLOAD_ROOT / stored_filename
+
+    content = await file.read()
+    file_path.write_bytes(content)
+
+    document = crud.create_order_document(
+        db,
+        order_id=order_id,
+        document_type=document_type,
+        source="manual",
+        original_filename=original_filename,
+        stored_filename=stored_filename,
+        file_path=str(file_path),
+        content_type=file.content_type,
+        reviewed=True,
+    )
+
+    crud.create_order_event(
+        db,
+        order_id=order_id,
+        event_type="DOCUMENT_UPLOADED",
+        notes=f"Uploaded {document_type}: {original_filename}",
+        created_by=current_user.username,
+    )
+
+    crud.create_audit_log(
+        db,
+        username=current_user.username,
+        action="UPLOAD_ORDER_DOCUMENT",
+        item_id=None,
+        details=(
+            f"Uploaded {document_type} document for order #{order_id}: "
+            f"{original_filename}"
+        ),
+    )
+
+    if document_type == "confirmation":
+        crud.mark_order_confirmed(db, order_id, current_user.username)
+
+    crud.create_audit_log(
+        db,
+        username=current_user.username,
+        action="ORDER_CONFIRMED",
+        item_id=None,
+        details=f"Order #{order_id} marked confirmed from uploaded confirmation",
+    )
+
+    if document_type == "invoice":
+        crud.mark_order_invoice_received(db, order_id, current_user.username)
+
+    if document_type in {"delivery", "packing_slip"}:
+        crud.mark_order_delivered(
+            db,
+            order_id=order_id,
+            delivery_date_value=date.today(),
+            received_by=current_user.username,
+            username=current_user.username,
+            notes=f"{document_type} uploaded",
+        )
+
+    crud.create_audit_log(
+        db,
+        username=current_user.username,
+        action="ORDER_DELIVERED",
+        item_id=None,
+        details=f"Order #{order_id} marked delivered from uploaded {document_type}",
+    )
+    return document
+
+
+@app.get(
+    "/orders/{order_id}/events",
+    response_model=list[schemas.OrderEventResponse],
+)
+def list_order_events(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(auth.require_role("admin")),
+):
+    order = crud.get_order_by_id(db, order_id)
+
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    return crud.get_order_events(db, order_id)
+
+
+@app.post("/orders/{order_id}/mark-delivered", response_model=schemas.OrderResponse)
+def mark_order_delivered(
+    order_id: int,
+    payload: schemas.MarkDeliveredRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(auth.require_role("admin")),
+):
+    order = crud.mark_order_delivered(
+        db,
+        order_id=order_id,
+        delivery_date_value=payload.delivery_date,
+        received_by=payload.received_by,
+        username=current_user.username,
+        notes=payload.notes,
+    )
+
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    crud.create_audit_log(
+        db,
+        username=current_user.username,
+        action="ORDER_DELIVERED",
+        item_id=None,
+        details=(
+            f"Marked order #{order_id} delivered. "
+            f"Inventory updated for {order.item_name} ({order.catalog_no})"
+        ),
+    )
+    return order
+
+
+@app.post("/orders/{order_id}/mark-paid", response_model=schemas.OrderResponse)
+def mark_order_paid(
+    order_id: int,
+    payload: schemas.MarkPaidRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(auth.require_role("admin")),
+):
+    order = crud.mark_order_paid(
+        db,
+        order_id=order_id,
+        date_paid_value=payload.date_paid,
+        amount_paid=payload.amount_paid,
+        cc_invoice=payload.cc_invoice,
+        username=current_user.username,
+        notes=payload.notes,
+    )
+
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    crud.create_audit_log(
+        db,
+        username=current_user.username,
+        action="ORDER_PAID",
+        item_id=None,
+        details=(
+            f"Marked order #{order_id} paid. "
+            f"Amount paid: {order.amount_paid if order.amount_paid is not None else 'unknown'}"
+        ),
+    )
+
+    return order
+
+@app.get(
+    "/orders/{order_id}/documents",
+    response_model=list[schemas.OrderDocumentResponse],
+)
+def get_order_documents(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(auth.require_role("admin")),
+):
+    return crud.get_order_documents(db, order_id)
+
+@app.get("/order-documents/{document_id}/download")
+def download_order_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(auth.require_role("admin")),
+):
+    document = crud.get_order_document(db, document_id)
+
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if not document.file_path:
+        raise HTTPException(status_code=404, detail="Document path missing")
+
+    file_path = Path(document.file_path)
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File missing from server")
+
+    return FileResponse(
+        path=file_path,
+        media_type=document.content_type or "application/octet-stream",
+        filename=document.original_filename or document.stored_filename,
     )

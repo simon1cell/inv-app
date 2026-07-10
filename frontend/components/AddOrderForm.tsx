@@ -2,63 +2,151 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import {
-  ITEM_TYPES,
   todayInputValue,
+  type InventoryItem,
   type Order,
 } from "@/types/inventory";
 
 type AddOrderFormProps = {
+  initialItem?: InventoryItem | null;
+  inventoryItems: InventoryItem[];
   onBack: () => void;
   onSubmitOrder: (order: Order) => void;
 };
 
+function moneyString(value: number) {
+  if (!Number.isFinite(value)) return "";
+  return String(Number(value.toFixed(2)));
+}
+
 export default function AddOrderForm({
+  initialItem,
+  inventoryItems,
   onBack,
   onSubmitOrder,
 }: AddOrderFormProps) {
-  const [delivered, setDelivered] = useState(false);
-  const [fileName, setFileName] = useState("From device");
+  const [finalPriceTouched, setFinalPriceTouched] = useState(false);
 
   const [form, setForm] = useState({
-    itemName: "",
-    itemType: "",
-    supplier: "",
-    catalog: "",
     dateOrdered: todayInputValue(),
-    expiryDate: "",
+    orderPlacedBy: "",
+    poNumber: "",
+    vendor: initialItem?.brand === "—" ? "" : initialItem?.brand ?? "",
+    category: initialItem?.category ?? "",
+    catalogNo: initialItem?.catalogueNum ?? "",
+    itemName: initialItem?.itemName ?? "",
     unitsOrdered: "",
-    reorderLevel: "",
     pricePerUnit: "",
     totalPrice: "",
-    dateDelivered: "",
+    finalPrice: "",
+    availability: "",
+    expectedDeliveryDate: "",
+    orderNumber: "",
+    deliveryDate: "",
+    status: "Ordered",
+    receivedBy: "",
     datePaid: "",
+    amountPaid: "",
+    ccInvoice: "",
   });
 
+  const delivered = form.status === "Delivered" || Boolean(form.deliveryDate);
+
   const formValid = useMemo(() => {
-    const baseValid =
-      form.itemName &&
-      form.itemType &&
-      form.supplier &&
-      form.catalog &&
+    return Boolean(
       form.dateOrdered &&
-      form.expiryDate &&
-      form.unitsOrdered &&
-      form.reorderLevel &&
-      form.pricePerUnit &&
-      form.totalPrice;
+        form.vendor &&
+        form.catalogNo &&
+        form.itemName &&
+        form.unitsOrdered &&
+        form.pricePerUnit &&
+        form.totalPrice,
+    );
+  }, [form]);
 
-    if (!delivered) {
-      return Boolean(baseValid);
-    }
+  function findInventoryMatch(name: keyof typeof form, value: string) {
+  const normalized = value.trim().toLowerCase();
 
-    return Boolean(baseValid && form.dateDelivered && form.datePaid);
-  }, [delivered, form]);
+  if (!normalized) return null;
+
+  if (name === "catalogNo") {
+    return (
+      inventoryItems.find(
+        (item) => item.catalogueNum.toLowerCase() === normalized,
+      ) ?? null
+    );
+  }
+
+  if (name === "itemName") {
+    return (
+      inventoryItems.find(
+        (item) => item.itemName.toLowerCase() === normalized,
+      ) ?? null
+    );
+  }
+
+  return null;
+}
 
   function updateField(name: keyof typeof form, value: string) {
-    setForm((current) => ({
-      ...current,
-      [name]: value,
-    }));
+    setForm((current) => {
+      const next = {
+        ...current,
+        [name]: value,
+      };
+
+      const match = findInventoryMatch(name, value);
+
+      if (match) {
+        next.itemName = match.itemName;
+        next.catalogNo = match.catalogueNum;
+        next.vendor = match.brand === "—" ? "" : match.brand;
+        next.category = match.category;
+      }
+
+      if (name === "finalPrice") {
+        setFinalPriceTouched(true);
+      }
+
+      const units = Number(
+        name === "unitsOrdered" ? value : next.unitsOrdered,
+      );
+
+      const price = Number(
+        name === "pricePerUnit" ? value : next.pricePerUnit,
+      );
+
+      const total = Number(
+        name === "totalPrice" ? value : next.totalPrice,
+      );
+
+      if (name === "unitsOrdered" || name === "pricePerUnit") {
+        if (Number.isFinite(units) && units > 0 && Number.isFinite(price)) {
+          const computedTotal = moneyString(units * price);
+          next.totalPrice = computedTotal;
+
+          if (!finalPriceTouched) {
+            next.finalPrice = computedTotal;
+          }
+        }
+      }
+
+      if (name === "totalPrice") {
+        if (Number.isFinite(units) && units > 0 && Number.isFinite(total)) {
+          next.pricePerUnit = moneyString(total / units);
+        }
+
+        if (!finalPriceTouched) {
+          next.finalPrice = value;
+        }
+      }
+
+      if (name === "status" && value === "Delivered" && !next.deliveryDate) {
+        next.deliveryDate = todayInputValue();
+      }
+
+      return next;
+    });
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -68,16 +156,32 @@ export default function AddOrderForm({
 
     onSubmitOrder({
       id: Date.now(),
+
       dateOrdered: form.dateOrdered,
-      itemName: form.itemName || form.itemType,
-      supplier: form.supplier,
-      totalPrice: form.totalPrice,
-      pricePerUnit: form.pricePerUnit,
-      catalogueNum: form.catalog,
+      orderPlacedBy: form.orderPlacedBy,
+      poNumber: form.poNumber,
+      supplier: form.vendor,
+      category: form.category,
+      catalogueNum: form.catalogNo,
+      itemName: form.itemName,
+
       unitsOrdered: form.unitsOrdered,
-      expiryDate: form.expiryDate,
+      pricePerUnit: form.pricePerUnit,
+      totalPrice: form.totalPrice,
+      finalPrice: form.finalPrice,
+
+      availability: form.availability,
+      expectedDeliveryDate: form.expectedDeliveryDate,
+      orderNumber: form.orderNumber,
+      dateDelivered: form.deliveryDate || undefined,
+      status: form.status,
+      receivedBy: form.receivedBy,
+      datePaid: form.datePaid,
+      amountPaid: form.amountPaid,
+      ccInvoice: form.ccInvoice,
+
+      expiryDate: form.expectedDeliveryDate,
       delivered,
-      dateDelivered: delivered ? form.dateDelivered : undefined,
     });
   }
 
@@ -86,87 +190,18 @@ export default function AddOrderForm({
       <div className="crumb">
         <span className="root">ORDERS</span>
         <span>/</span>
-        <span className="cur">Adding Item</span>
+        <span className="cur">Adding Order</span>
       </div>
 
       <form className="form-card" onSubmit={handleSubmit}>
         <div className="form-top">
           <h2>Order Information</h2>
-
-          <button
-            type="button"
-            className={delivered ? "toggle-wrap on" : "toggle-wrap"}
-            onClick={() => setDelivered((current) => !current)}
-          >
-            <span className="toggle" />
-            <span className="tlabel">
-              {delivered ? "Delivered" : "Not Delivered"}
-            </span>
-          </button>
         </div>
 
         <div className="grid">
           <div className="field">
             <label>
-              Item Name <span className="req-star">*</span>
-            </label>
-            <div className="control">
-              <input
-                placeholder="Fisher Scientific"
-                value={form.itemName}
-                onChange={(event) => updateField("itemName", event.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="field">
-            <label>
-              Item Type <span className="req-star">*</span>
-            </label>
-            <div className="control">
-              <select
-                value={form.itemType}
-                onChange={(event) => updateField("itemType", event.target.value)}
-              >
-                <option value="">Search Item Types</option>
-                {ITEM_TYPES.map((itemType) => (
-                  <option key={itemType} value={itemType}>
-                    {itemType}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="field">
-            <label>
-              Supplier <span className="req-star">*</span>
-            </label>
-            <div className="control">
-              <input
-                placeholder="Fisher Scientific"
-                value={form.supplier}
-                onChange={(event) => updateField("supplier", event.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="field">
-            <label>
-              Catalog Number <span className="req-star">*</span>
-            </label>
-            <div className="control">
-              <input
-                placeholder="00-000"
-                value={form.catalog}
-                onChange={(event) => updateField("catalog", event.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="field">
-            <label>
-              Date Order Placed <span className="req-star">*</span>
+              Date <span className="req-star">*</span>
             </label>
             <div className="control">
               <input
@@ -180,29 +215,92 @@ export default function AddOrderForm({
           </div>
 
           <div className="field">
-            <label>
-              Expiry Date <span className="req-star">*</span>
-            </label>
+            <label>Order Placed By</label>
             <div className="control">
               <input
-                type="date"
-                value={form.expiryDate}
+                placeholder="Sankar, labtech1..."
+                value={form.orderPlacedBy}
                 onChange={(event) =>
-                  updateField("expiryDate", event.target.value)
+                  updateField("orderPlacedBy", event.target.value)
                 }
               />
             </div>
           </div>
 
           <div className="field">
+            <label>PO Number</label>
+            <div className="control">
+              <input
+                placeholder="20260707-..."
+                value={form.poNumber}
+                onChange={(event) => updateField("poNumber", event.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="field">
             <label>
-              Units Ordered <span className="req-star">*</span>
+              Vendor <span className="req-star">*</span>
+            </label>
+            <div className="control">
+              <input
+                list="vendor-suggestions"
+                placeholder="Fisher Scientific"
+                value={form.vendor}
+                onChange={(event) => updateField("vendor", event.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="field">
+            <label>Category</label>
+            <div className="control">
+              <input
+                list="category-suggestions"
+                placeholder="Consumables, Reagent..."
+                value={form.category}
+                onChange={(event) => updateField("category", event.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="field">
+            <label>
+              Catalog No. <span className="req-star">*</span>
+            </label>
+            <div className="control">
+              <input
+                list="catalog-number-suggestions"
+                placeholder="Q32856"
+                value={form.catalogNo}
+                onChange={(event) => updateField("catalogNo", event.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="field">
+            <label>
+              Item Name <span className="req-star">*</span>
+            </label>
+            <div className="control">
+              <input
+                list="item-name-suggestions"
+                placeholder="Gloves, assay tubes, reagent kit..."
+                value={form.itemName}
+                onChange={(event) => updateField("itemName", event.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="field">
+            <label>
+              # of Units <span className="req-star">*</span>
             </label>
             <div className="control">
               <input
                 type="number"
                 min="0"
-                placeholder="00"
+                placeholder="12"
                 value={form.unitsOrdered}
                 onChange={(event) =>
                   updateField("unitsOrdered", event.target.value)
@@ -213,24 +311,7 @@ export default function AddOrderForm({
 
           <div className="field">
             <label>
-              Reorder Level <span className="req-star">*</span>
-            </label>
-            <div className="control">
-              <input
-                type="number"
-                min="0"
-                placeholder="00"
-                value={form.reorderLevel}
-                onChange={(event) =>
-                  updateField("reorderLevel", event.target.value)
-                }
-              />
-            </div>
-          </div>
-
-          <div className="field">
-            <label>
-              Price Per Unit <span className="req-star">*</span>
+              Price / Unit <span className="req-star">*</span>
             </label>
             <div className="control">
               <span className="prefix">$</span>
@@ -238,7 +319,7 @@ export default function AddOrderForm({
                 type="number"
                 min="0"
                 step="0.01"
-                placeholder="0"
+                placeholder="100"
                 value={form.pricePerUnit}
                 onChange={(event) =>
                   updateField("pricePerUnit", event.target.value)
@@ -258,7 +339,7 @@ export default function AddOrderForm({
                 type="number"
                 min="0"
                 step="0.01"
-                placeholder="Number"
+                placeholder="1200"
                 value={form.totalPrice}
                 onChange={(event) =>
                   updateField("totalPrice", event.target.value)
@@ -268,26 +349,112 @@ export default function AddOrderForm({
             </div>
           </div>
 
-          <div className={delivered ? "field" : "field disabled"}>
-            <label>Date Delivered</label>
+          <div className="field">
+            <label>Final Price with Tax/Freight</label>
+            <div className="control">
+              <span className="prefix">$</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Final total"
+                value={form.finalPrice}
+                onChange={(event) =>
+                  updateField("finalPrice", event.target.value)
+                }
+              />
+              <span className="suffix">USD</span>
+            </div>
+          </div>
+
+          <div className="field">
+            <label>Availability</label>
             <div className="control">
               <input
-                type="date"
-                disabled={!delivered}
-                value={form.dateDelivered}
+                placeholder="In stock, backordered, unavailable..."
+                value={form.availability}
                 onChange={(event) =>
-                  updateField("dateDelivered", event.target.value)
+                  updateField("availability", event.target.value)
                 }
               />
             </div>
           </div>
 
-          <div className={delivered ? "field" : "field disabled"}>
+          <div className="field">
+            <label>Expected Delivery Date</label>
+            <div className="control">
+              <input
+                type="date"
+                value={form.expectedDeliveryDate}
+                onChange={(event) =>
+                  updateField("expectedDeliveryDate", event.target.value)
+                }
+              />
+            </div>
+          </div>
+
+          <div className="field">
+            <label>Order #</label>
+            <div className="control">
+              <input
+                placeholder="260336"
+                value={form.orderNumber}
+                onChange={(event) =>
+                  updateField("orderNumber", event.target.value)
+                }
+              />
+            </div>
+          </div>
+
+          <div className="field">
+            <label>Delivery Date</label>
+            <div className="control">
+              <input
+                type="date"
+                value={form.deliveryDate}
+                onChange={(event) =>
+                  updateField("deliveryDate", event.target.value)
+                }
+              />
+            </div>
+          </div>
+
+          <div className="field">
+            <label>Status</label>
+            <div className="control">
+              <select
+                value={form.status}
+                onChange={(event) => updateField("status", event.target.value)}
+              >
+                <option value="Ordered">Ordered</option>
+                <option value="Confirmed">Confirmed</option>
+                <option value="Shipped">Shipped</option>
+                <option value="Delivered">Delivered</option>
+                <option value="Invoice Received">Invoice Received</option>
+                <option value="Paid">Paid</option>
+                <option value="Cancelled">Cancelled</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="field">
+            <label>Received By</label>
+            <div className="control">
+              <input
+                placeholder="Name"
+                value={form.receivedBy}
+                onChange={(event) =>
+                  updateField("receivedBy", event.target.value)
+                }
+              />
+            </div>
+          </div>
+
+          <div className="field">
             <label>Date Paid</label>
             <div className="control">
               <input
                 type="date"
-                disabled={!delivered}
                 value={form.datePaid}
                 onChange={(event) => updateField("datePaid", event.target.value)}
               />
@@ -295,20 +462,33 @@ export default function AddOrderForm({
           </div>
 
           <div className="field">
-            <label>Product Image</label>
-            <div className={fileName === "From device" ? "file-row" : "file-row has"}>
-              <label className="choose">
-                Choose File
-                <input
-                  type="file"
-                  accept="image/*,video/*"
-                  hidden
-                  onChange={(event) =>
-                    setFileName(event.target.files?.[0]?.name ?? "From device")
-                  }
-                />
-              </label>
-              <span className="fname">{fileName}</span>
+            <label>Amount Paid</label>
+            <div className="control">
+              <span className="prefix">$</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Amount paid"
+                value={form.amountPaid}
+                onChange={(event) =>
+                  updateField("amountPaid", event.target.value)
+                }
+              />
+              <span className="suffix">USD</span>
+            </div>
+          </div>
+
+          <div className="field">
+            <label>CC/Invoice?</label>
+            <div className="control">
+              <input
+                placeholder="CC, Invoice, invoice #..."
+                value={form.ccInvoice}
+                onChange={(event) =>
+                  updateField("ccInvoice", event.target.value)
+                }
+              />
             </div>
           </div>
         </div>
@@ -319,9 +499,40 @@ export default function AddOrderForm({
           </button>
 
           <button type="submit" className="btn primary" disabled={!formValid}>
-            Submit
+            Submit Order
           </button>
         </div>
+        <datalist id="item-name-suggestions">
+          {inventoryItems.map((item) => (
+            <option key={item.id} value={item.itemName}>
+              {item.catalogueNum}
+            </option>
+          ))}
+        </datalist>
+
+        <datalist id="catalog-number-suggestions">
+          {inventoryItems.map((item) => (
+            <option key={item.id} value={item.catalogueNum}>
+              {item.itemName}
+            </option>
+          ))}
+        </datalist>
+
+        <datalist id="vendor-suggestions">
+          {[...new Set(inventoryItems.map((item) => item.brand).filter(Boolean))].map(
+            (brand) => (
+              <option key={brand} value={brand} />
+            ),
+          )}
+        </datalist>
+
+        <datalist id="category-suggestions">
+          {[...new Set(inventoryItems.map((item) => item.category).filter(Boolean))].map(
+            (category) => (
+              <option key={category} value={category} />
+            ),
+          )}
+        </datalist>
       </form>
     </section>
   );

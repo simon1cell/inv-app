@@ -1,4 +1,11 @@
-export type View = "inventory" | "orders" | "add" | "audit" | "users";
+export type View =
+  | "inventory"
+  | "orders"
+  | "add-item"
+  | "edit-item"
+  | "add-order"
+  | "audit"
+  | "users";
 
 export type Status =
   | "high"
@@ -27,16 +34,32 @@ export type InventoryItem = {
 
 export type Order = {
   id: number;
+
   dateOrdered: string;
-  itemName: string;
+  orderPlacedBy?: string;
+  poNumber?: string;
   supplier: string;
-  totalPrice: string;
-  pricePerUnit: string;
+  category?: string;
   catalogueNum: string;
+  itemName: string;
+
   unitsOrdered: string;
+  pricePerUnit: string;
+  totalPrice: string;
+  finalPrice?: string;
+
+  availability?: string;
+  expectedDeliveryDate?: string;
+  orderNumber?: string;
+  dateDelivered?: string;
+  status?: string;
+  receivedBy?: string;
+  datePaid?: string;
+  amountPaid?: string;
+  ccInvoice?: string;
+
   expiryDate: string;
   delivered: boolean;
-  dateDelivered?: string;
 };
 
 export type OrderRecord = {
@@ -138,3 +161,34 @@ export function toDisplayDate(value: string) {
 
   return value;
 }
+
+export type OrderDocument = {
+  id: number;
+  orderId: number | null;
+  documentType: string;
+  source: string;
+  sender: string | null;
+  subject: string | null;
+  originalFilename: string | null;
+  contentType: string | null;
+  confidence: number | null;
+  reviewed: boolean;
+  receivedAt: string;
+};
+
+export type OrderEvent = {
+  id: number;
+  orderId: number;
+  eventType: string;
+  notes: string | null;
+  createdBy: string | null;
+  createdAt: string;
+};
+
+export type OrderDocumentType =
+  | "confirmation"
+  | "invoice"
+  | "delivery"
+  | "packing_slip"
+  | "shipping"
+  | "other";

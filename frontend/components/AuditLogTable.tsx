@@ -9,6 +9,25 @@ function formatChange(value: number | null) {
   return value > 0 ? `+${value}` : value;
 }
 
+function actionLabel(action: string) {
+  const labels: Record<string, string> = {
+    CREATE_ITEM: "Created Item",
+    UPDATE_ITEM: "Updated Item",
+    DELETE_ITEM: "Deleted Item",
+    TRANSACTION: "Inventory Transaction",
+    DELETE_ORDER_DOCUMENT: "Deleted Order Document",
+    CREATE_ORDER: "Created Order",
+    IMPORT_ORDERS: "Imported Orders",
+    AI_IMPORT_ORDERS: "AI Imported Orders",
+    UPLOAD_ORDER_DOCUMENT: "Uploaded Order Document",
+    ORDER_CONFIRMED: "Order Confirmed",
+    ORDER_DELIVERED: "Order Delivered",
+    ORDER_PAID: "Order Paid",
+  };
+
+  return labels[action] ?? action.replace(/_/g, " ");
+}
+
 export default function AuditLogTable({ logs }: AuditLogTableProps) {
   return (
     <section className="view active">
@@ -18,7 +37,9 @@ export default function AuditLogTable({ logs }: AuditLogTableProps) {
         <div className="card-head">
           <div>
             <h2>Audit Log</h2>
-            <p className="sub">Inventory transactions recorded by the system.</p>
+            <p className="sub">
+              Inventory and order actions recorded by the system.
+            </p>
           </div>
         </div>
 
@@ -42,9 +63,14 @@ export default function AuditLogTable({ logs }: AuditLogTableProps) {
                 <tr key={log.id}>
                   <td>{new Date(log.timestamp).toLocaleString()}</td>
                   <td>{log.username}</td>
+
                   <td>
-                    <code>{log.action}</code>
+                    <div className="audit-action">
+                      <strong>{actionLabel(log.action)}</strong>
+                      <code>{log.action}</code>
+                    </div>
                   </td>
+
                   <td>{log.itemId ?? "—"}</td>
                   <td>{log.oldQuantity ?? "—"}</td>
                   <td>{formatChange(log.changeAmount)}</td>
