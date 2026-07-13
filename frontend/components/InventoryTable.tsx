@@ -16,6 +16,7 @@ type InventoryTableProps = {
   onEditItem: (item: InventoryItem) => void;
   onDeleteItem: (itemId: string) => void;
   onQuantityChange: (item: InventoryItem, nextQuantity: number) => void;
+  onViewComments: (item: InventoryItem) => void;
 };
 
 const FILTERS: Array<{
@@ -36,6 +37,7 @@ export default function InventoryTable({
   onEditItem,
   onDeleteItem,
   onQuantityChange,
+  onViewComments,
 }: InventoryTableProps) {
   const [filter, setFilter] = useState<Status | "everything">("everything");
   const [search, setSearch] = useState("");
@@ -171,7 +173,14 @@ export default function InventoryTable({
                       >
                         ✎
                       </button>
-
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        title="Comments"
+                        onClick={() => onViewComments(item)}
+                      >
+                        💬
+                      </button>
                       <button
                         type="button"
                         className="icon-btn del"

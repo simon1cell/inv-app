@@ -33,6 +33,9 @@ import {
   markOrderPaid,
   uploadOrderDocument,
   updateItem,
+  getItemComments,
+  createItemComment,
+  deleteItemComment,
   type CurrentUser,
 } from "@/lib/api";
 import {
@@ -43,6 +46,7 @@ import {
   type OrderRecord,
   type UserAccount,
   type View,
+  type ItemComment,
 } from "@/types/inventory";
 
 function getInitials(username: string) {
@@ -133,6 +137,11 @@ export default function Home() {
   const [orderSeedItem, setOrderSeedItem] = useState<InventoryItem | null>(null);
 
   const isAdmin = user?.role?.toLowerCase() === "admin";
+
+  const [commentItem, setCommentItem] = useState<InventoryItem | null>(null);
+  const [itemComments, setItemComments] = useState<ItemComment[]>([]);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [commentsLoading, setCommentsLoading] = useState(false);
 
   const stats = useMemo(() => {
     return {
@@ -234,6 +243,65 @@ export default function Home() {
     }
   }
 
+  async function openItemComments(item: InventoryItem) {
+    setCommentItem(item);
+    setItemComments([]);
+    setCommentDraft("");
+    setCommentsLoading(true);
+    setError("");
+
+    try {
+      const comments = await getItemComments(token, item.id);
+      setItemComments(comments);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load comments");
+    } finally {
+      setCommentsLoading(false);
+    }
+  }
+
+  function closeItemComments() {
+    setCommentItem(null);
+    setItemComments([]);
+    setCommentDraft("");
+  }
+
+  async function handleCreateItemComment() {
+    if (!commentItem || !commentDraft.trim()) return;
+
+    setError("");
+
+    try {
+      const created = await createItemComment(
+        token,
+        commentItem.id,
+        commentDraft,
+      );
+
+      setItemComments((current) => [created, ...current]);
+      setCommentDraft("");
+      showToast("Comment added");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add comment");
+    }
+  }
+
+  async function handleDeleteItemComment(commentId: number) {
+    if (!window.confirm("Delete this comment?")) return;
+
+    setError("");
+
+    try {
+      await deleteItemComment(token, commentId);
+      setItemComments((current) =>
+        current.filter((comment) => comment.id !== commentId),
+      );
+      showToast("Comment deleted");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete comment");
+    }
+  }
+
   async function refreshOrders(activeToken = token) {
     if (!activeToken || !isAdmin) return;
 
@@ -280,8 +348,6 @@ export default function Home() {
   }
 
   async function handleLogin() {
-    event.preventDefault();
-
     setLoggingIn(true);
     setError("");
 
@@ -290,6 +356,7 @@ export default function Home() {
         login(loginUsername, loginPassword),
         5000,
       );
+
       const accessToken = tokenData.access_token;
 
       const [currentUser, items] = await withTimeout(
@@ -753,6 +820,7 @@ export default function Home() {
               onEditItem={handleEditItem}
               onDeleteItem={handleDeleteItem}
               onQuantityChange={handleQuantityChange}
+              onViewComments={openItemComments}
             />
           </section>
         )}
@@ -821,6 +889,74 @@ export default function Home() {
             }}
             onSubmitOrder={handleSubmitOrder}
           />
+        )}
+
+        {commentItem && (
+          <div className="modal-backdrop" onClick={closeItemComments}>
+            <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+              <div className="modal-head">
+                <div>
+                  <h2>Item Comments</h2>
+                  <p className="sub">
+                    {commentItem.itemName} · {commentItem.catalogueNum}
+                  </p>
+                </div>
+
+                <button type="button" className="icon-btn" onClick={closeItemComments}>
+                  ✕
+                </button>
+              </div>
+
+              <div className="comment-compose">
+                <textarea
+                  placeholder="Add note, issue, reorder comment, storage note..."
+                  value={commentDraft}
+                  onChange={(event) => setCommentDraft(event.target.value)}
+                />
+
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={!commentDraft.trim()}
+                  onClick={() => void handleCreateItemComment()}
+                >
+                  Add Comment
+                </button>
+              </div>
+
+              {commentsLoading && <p className="modal-message">Loading comments...</p>}
+
+              {!commentsLoading && itemComments.length === 0 && (
+                <p className="modal-message">No comments yet.</p>
+              )}
+
+              {!commentsLoading && itemComments.length > 0 && (
+                <div className="comment-list">
+                  {itemComments.map((comment) => (
+                    <div key={comment.id} className="comment-row">
+                      <div>
+                        <strong>{comment.username}</strong>
+                        <p>{comment.comment}</p>
+                        <span>
+                          {new Date(comment.createdAt).toLocaleString()}
+                        </span>
+                      </div>
+
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          className="mini-btn danger"
+                          onClick={() => void handleDeleteItemComment(comment.id)}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </main>
 

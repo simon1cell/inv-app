@@ -1162,3 +1162,70 @@ def download_order_document(
         media_type=document.content_type or "application/octet-stream",
         filename=document.original_filename or document.stored_filename,
     )
+
+@app.get(
+    "/items/{item_id}/comments",
+    response_model=list[schemas.ItemCommentResponse],
+)
+def get_item_comments(
+    item_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(auth.get_current_user),
+):
+    return crud.get_item_comments(db, item_id)
+
+
+@app.post(
+    "/items/{item_id}/comments",
+    response_model=schemas.ItemCommentResponse,
+)
+def create_item_comment(
+    item_id: str,
+    payload: schemas.ItemCommentCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(auth.get_current_user),
+):
+    if not payload.comment.strip():
+        raise HTTPException(status_code=400, detail="Comment cannot be empty")
+
+    comment = crud.create_item_comment(
+        db,
+        item_id=item_id,
+        username=current_user.username,
+        comment=payload.comment,
+    )
+
+    if comment is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    crud.create_audit_log(
+        db,
+        username=current_user.username,
+        action="ITEM_COMMENT",
+        item_id=None,
+        details=f"Commented on item {item_id}: {payload.comment[:100]}",
+    )
+
+    return comment
+
+
+@app.delete("/item-comments/{comment_id}")
+def delete_item_comment(
+    comment_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(auth.require_role("admin")),
+):
+    comment = crud.delete_item_comment(db, comment_id)
+
+    if comment is None:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    crud.create_audit_log(
+        db,
+        username=current_user.username,
+        action="DELETE_ITEM_COMMENT",
+        item_id=None,
+        details=f"Deleted comment #{comment_id} from item {comment.item_id}",
+    )
+
+    return {"message": "Comment deleted"}

@@ -32,6 +32,14 @@ export type InventoryItem = {
   lastUsedAt: string | null;
 };
 
+export type ItemComment = {
+  id: number;
+  itemId: string;
+  username: string;
+  comment: string;
+  createdAt: string;
+};
+
 export type Order = {
   id: number;
 

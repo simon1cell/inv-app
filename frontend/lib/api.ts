@@ -2,6 +2,7 @@ import {
   getStatusFromQuantity,
   type AuditLog,
   type InventoryItem,
+  type ItemComment,
 } from "@/types/inventory";
 import type {
   OrderDocument,
@@ -292,6 +293,24 @@ export async function updateItem(
   return mapItem(item);
 }
 
+type BackendItemComment = {
+  id: number;
+  item_id: string;
+  username: string;
+  comment: string;
+  created_at: string;
+};
+
+function mapItemComment(comment: BackendItemComment): ItemComment {
+  return {
+    id: comment.id,
+    itemId: comment.item_id,
+    username: comment.username,
+    comment: comment.comment,
+    createdAt: comment.created_at,
+  };
+}
+
 export async function createTransaction(
   token: string,
   itemId: string,
@@ -507,6 +526,42 @@ function mapOrderDocument(document: BackendOrderDocument): OrderDocument {
     reviewed: document.reviewed,
     receivedAt: document.received_at,
   };
+}
+
+export async function getItemComments(token: string, itemId: string) {
+  const comments = await apiRequest<BackendItemComment[]>(
+    `/items/${encodeURIComponent(itemId)}/comments`,
+    { token },
+  );
+
+  return comments.map(mapItemComment);
+}
+
+export async function createItemComment(
+  token: string,
+  itemId: string,
+  comment: string,
+) {
+  const created = await apiRequest<BackendItemComment>(
+    `/items/${encodeURIComponent(itemId)}/comments`,
+    {
+      token,
+      method: "POST",
+      json: { comment },
+    },
+  );
+
+  return mapItemComment(created);
+}
+
+export async function deleteItemComment(token: string, commentId: number) {
+  return apiRequest<{ message: string }>(
+    `/item-comments/${commentId}`,
+    {
+      token,
+      method: "DELETE",
+    },
+  );
 }
 
 type BackendOrderEvent = {

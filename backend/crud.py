@@ -200,6 +200,54 @@ def restock_item(db: Session, item_id: str, amount: int):
     db.refresh(item)
     return item
 
+def get_item_comments(db: Session, item_id: str):
+    return (
+        db.query(models.ItemComment)
+        .filter(models.ItemComment.item_id == str(item_id))
+        .order_by(models.ItemComment.created_at.desc())
+        .all()
+    )
+
+
+def create_item_comment(
+    db: Session,
+    item_id: str,
+    username: str,
+    comment: str,
+):
+    item = get_item(db, item_id)
+
+    if item is None:
+        return None
+
+    db_comment = models.ItemComment(
+        item_id=str(item_id),
+        username=username,
+        comment=comment.strip(),
+    )
+
+    db.add(db_comment)
+    db.commit()
+    db.refresh(db_comment)
+
+    return db_comment
+
+
+def delete_item_comment(db: Session, comment_id: int):
+    comment = (
+        db.query(models.ItemComment)
+        .filter(models.ItemComment.id == comment_id)
+        .first()
+    )
+
+    if comment is None:
+        return None
+
+    db.delete(comment)
+    db.commit()
+
+    return comment
+
 def create_transaction(db: Session, item_id: str, change_amount: int):
     item = get_item(db, item_id)
 

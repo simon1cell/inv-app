@@ -14,6 +14,8 @@ function actionLabel(action: string) {
     CREATE_ITEM: "Created Item",
     UPDATE_ITEM: "Updated Item",
     DELETE_ITEM: "Deleted Item",
+    ITEM_COMMENT: "Item Comment",
+    DELETE_ITEM_COMMENT: "Deleted Item Comment",
     TRANSACTION: "Inventory Transaction",
     DELETE_ORDER_DOCUMENT: "Deleted Order Document",
     CREATE_ORDER: "Created Order",

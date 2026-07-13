@@ -79,6 +79,19 @@ class ItemTransactionCreate(BaseModel):
     amount: int
     reason: str | None = None
 
+class ItemCommentCreate(BaseModel):
+    comment: str
+
+
+class ItemCommentResponse(BaseModel):
+    id: int
+    item_id: str
+    username: str
+    comment: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
 class DashBoardStats(BaseModel):
     out_of_stock: int
     critical: int

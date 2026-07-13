@@ -40,7 +40,7 @@ export default function Sidebar({
           <>
             <button
               type="button"
-              className={view === "orders" || view === "add" ? "active" : ""}
+              className={view === "orders" || view === "add-order" ? "active" : ""}
               onClick={() => onViewChange("orders")}
             >
               <span className="nav-icon">☑</span>

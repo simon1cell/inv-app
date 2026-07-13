@@ -30,6 +30,14 @@ class Item(Base):
     tags = Column(String, nullable = True, default = "")
     last_used_at = Column(DateTime, nullable=True)
 
+class ItemComment(Base):
+    __tablename__ = "item_comments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    item_id = Column(String, ForeignKey("items.catalogue_num"), nullable=False, index=True)
+    username = Column(String, nullable=False)
+    comment = Column(Text, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
