@@ -12,7 +12,9 @@ import type {
 import type { UserAccount } from "@/types/inventory";
 import type { OrderRecord } from "@/types/inventory";
 
-const API_BASE_URL = "https://reliably-caress-synopsis.ngrok-free.dev";
+const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000"
+).replace(/\/$/, "");
 
 type TokenResponse = {
   access_token: string;
