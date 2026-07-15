@@ -19,16 +19,15 @@ from uuid import uuid4
 
 app = FastAPI()
 
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://172.23.186.98:3000",
-    "http://10.3.20.141:3000",
-]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://10.3.20.141:3000",
+        "https://inv-app-omega.vercel.app",
+    ],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -364,7 +363,7 @@ def order_to_excel_row(order):
         order.cc_invoice,
     ]
 
-Base.metadata.create_all(bind=engine)
+models.Base.metadata.create_all(bind=engine)
 
 def get_db():
     db = SessionLocal()
