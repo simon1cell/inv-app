@@ -8,6 +8,8 @@ from jose import jwt
 from io import BytesIO
 from fastapi.responses import StreamingResponse, FileResponse
 from openpyxl import Workbook, load_workbook
+import os
+import tempfile
 import models
 import schemas
 import crud
@@ -87,7 +89,11 @@ HEADER_ALIASES = {
     "cc invoice": "cc_invoice",
 }
 
-UPLOAD_ROOT = Path("uploads/order_documents")
+if os.getenv("VERCEL"):
+    UPLOAD_ROOT = Path(tempfile.gettempdir()) / "order_documents"
+else:
+    UPLOAD_ROOT = Path("uploads/order_documents")
+
 UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 
 def normalize_header(value):
