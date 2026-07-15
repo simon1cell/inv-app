@@ -47,7 +47,7 @@ def get_items_filtered(
         expiring_before=None,
         status: str | None = None,
         category: str | None = None,
-        shelf_num: int | None = None,
+        shelf_num: str | None = None,
 ):
     query = db.query(models.Item)
 
@@ -89,30 +89,46 @@ def get_items_filtered(
 
 
 def get_item_types(db: Session):
-    rows = (
-        db.query(
-            models.ItemType,
-            func.coalesce(func.sum(models.Item.quantity), 0).label("total_quantity"),
-        )
-        .outerjoin(models.Item, models.Item.item_type_id == models.ItemType.id)
-        .group_by(models.ItemType.id)
-        .order_by(models.ItemType.name.asc())
-        .all()
-    )
+    item_types = db.query(models.ItemType).order_by(models.ItemType.name.asc()).all()
 
-    return [
-        {
-            "id": item_type.id,
-            "name": item_type.name,
-            "category": item_type.category,
-            "brand": item_type.brand,
-            "reorder_threshold": item_type.reorder_threshold,
-            "critical_threshold": item_type.critical_threshold,
-            "notes": item_type.notes,
-            "total_quantity": int(total_quantity or 0),
-        }
-        for item_type, total_quantity in rows
-    ]
+    results = []
+
+    for item_type in item_types:
+        linked_items = (
+            db.query(models.Item)
+            .filter(models.Item.item_type_id == item_type.id)
+            .all()
+        )
+
+        total_quantity = sum(item.quantity or 0 for item in linked_items)
+
+        brands = sorted(
+            {
+                item.brand.strip()
+                for item in linked_items
+                if item.brand and item.brand.strip() and item.brand.strip() != "—"
+            }
+        )
+
+        if brands:
+            brand = ", ".join(brands)
+        else:
+            brand = item_type.brand
+
+        results.append(
+            {
+                "id": item_type.id,
+                "name": item_type.name,
+                "category": item_type.category,
+                "brand": brand,
+                "reorder_threshold": item_type.reorder_threshold,
+                "critical_threshold": item_type.critical_threshold,
+                "notes": item_type.notes,
+                "total_quantity": int(total_quantity or 0),
+            }
+        )
+
+    return results
 
 def create_item_type(db: Session, payload: schemas.ItemTypeCreate):
     item_type = models.ItemType(**payload.model_dump())
@@ -150,6 +166,31 @@ def get_or_create_item_type_by_name(
     db.refresh(item_type)
     return item_type
 
+def resolve_order_item_type(db: Session, order_data: dict):
+    item_type_id = order_data.get("item_type_id")
+
+    if item_type_id:
+        existing = (
+            db.query(models.ItemType)
+            .filter(models.ItemType.id == item_type_id)
+            .first()
+        )
+
+        if existing:
+            return existing
+
+    item_name = order_data.get("item_name")
+
+    if not item_name:
+        return None
+
+    return get_or_create_item_type_by_name(
+        db,
+        name=item_name,
+        category=order_data.get("category"),
+        brand=order_data.get("vendor"),
+    )
+
 def delete_item(db: Session, item_id: str):
     db_item = get_item(db, item_id)
     if db_item is None:
@@ -167,7 +208,7 @@ def update_item(db: Session, item_id: str, item_data: schemas.ItemUpdate):
     
     update_data = item_data.model_dump(exclude_unset = True)
 
-    for key, value in item_data.model_dump().items():
+    for key, value in update_data.items():
         setattr(item, key, value)
 
     db.commit()
@@ -436,18 +477,22 @@ def get_orders_by_ids(db: Session, order_ids: list[int]):
         .all()
     )
 
-
 def create_order(db: Session, order: schemas.OrderCreate):
-    db_order = models.Order(**order.model_dump())
+    data = order.model_dump()
+
+    item_type = resolve_order_item_type(db, data)
+
+    if item_type is not None:
+        data["item_type_id"] = item_type.id
+
+    db_order = models.Order(**data)
 
     db.add(db_order)
     db.commit()
     db.refresh(db_order)
 
-    # Create item shell only. Do not increase inventory count yet.
     create_inventory_placeholder_from_order(db, db_order)
 
-    # Only add quantity if the order is already recorded as delivered/received.
     if order_counts_as_received(db_order):
         receive_order_into_inventory(db, db_order)
 
@@ -486,7 +531,6 @@ def order_counts_as_received(order: models.Order):
         or status in received_statuses
     )
 
-
 def create_inventory_placeholder_from_order(db: Session, order: models.Order):
     if not order.catalog_no:
         return None
@@ -499,9 +543,29 @@ def create_inventory_placeholder_from_order(db: Session, order: models.Order):
     existing_item = get_item_by_catalogue_num(db, catalogue_num)
 
     if existing_item is not None:
+        if order.item_type_id and not existing_item.item_type_id:
+            existing_item.item_type_id = order.item_type_id
+            db.commit()
+            db.refresh(existing_item)
+
         return existing_item
 
+    item_type_id = order.item_type_id
+
+    if not item_type_id:
+        item_type = get_or_create_item_type_by_name(
+            db,
+            name=order.item_name,
+            category=order.category,
+            brand=order.vendor,
+        )
+        item_type_id = item_type.id
+        order.item_type_id = item_type_id
+        db.commit()
+        db.refresh(order)
+
     item = models.Item(
+        item_type_id=item_type_id,
         catalogue_num=catalogue_num,
         item_name=order.item_name,
         lot_num=None,
@@ -523,7 +587,6 @@ def create_inventory_placeholder_from_order(db: Session, order: models.Order):
 
     return item
 
-
 def receive_order_into_inventory(db: Session, order: models.Order):
     if not order.catalog_no:
         return None
@@ -543,10 +606,29 @@ def receive_order_into_inventory(db: Session, order: models.Order):
     if item is None:
         return None
 
+    if order.item_type_id and not item.item_type_id:
+        item.item_type_id = order.item_type_id
+
+    if not order.item_type_id and item.item_type_id:
+        order.item_type_id = item.item_type_id
+
+    if not order.item_type_id and not item.item_type_id:
+        item_type = get_or_create_item_type_by_name(
+            db,
+            name=order.item_name,
+            category=order.category,
+            brand=order.vendor,
+        )
+
+        order.item_type_id = item_type.id
+        item.item_type_id = item_type.id
+
     if units > 0:
         item.quantity += units
 
-    item.storage_id = item.storage_id if item.storage_id != "Pending Order" else "Imported"
+    item.storage_id = (
+        item.storage_id if item.storage_id != "Pending Order" else "Imported"
+    )
     item.last_restocked = order.delivery_date or order.order_date or date.today()
 
     if item.tags:
