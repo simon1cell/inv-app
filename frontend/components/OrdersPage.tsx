@@ -363,16 +363,6 @@ export default function OrdersPage({
             />
 
             <input
-              ref={aiFileInputRef}
-              type="file"
-              accept=".xlsx,.xlsm"
-              hidden
-              onChange={(event) =>
-                void handleAiFileChange(event.target.files?.[0])
-              }
-            />
-
-            <input
               ref={documentInputRef}
               type="file"
               accept=".pdf,.png,.jpg,.jpeg,.xlsx,.xlsm,.doc,.docx"
