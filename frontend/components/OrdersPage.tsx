@@ -18,7 +18,6 @@ type OrdersPageProps = {
   onAddOrder: () => void;
   onAddOrderFromInventory: (item: InventoryItem) => void;
   onImportExcel: (file: File) => Promise<void>;
-  onImportExcelAi: (file: File) => Promise<void>;
   onExportAll: () => Promise<void>;
   onExportSelected: (ids: number[]) => Promise<void>;
   onUploadDocument: (
@@ -55,7 +54,6 @@ export default function OrdersPage({
   onAddOrder,
   onAddOrderFromInventory,
   onImportExcel,
-  onImportExcelAi,
   onExportAll,
   onExportSelected,
   onUploadDocument,
@@ -253,23 +251,6 @@ export default function OrdersPage({
 
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
-      }
-    }
-  }
-
-  async function handleAiFileChange(file: File | undefined) {
-    if (!file) return;
-
-    setAiImporting(true);
-
-    try {
-      await onImportExcelAi(file);
-      setSelectedIds([]);
-    } finally {
-      setAiImporting(false);
-
-      if (aiFileInputRef.current) {
-        aiFileInputRef.current.value = "";
       }
     }
   }

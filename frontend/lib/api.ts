@@ -490,27 +490,6 @@ export async function exportOrdersExcel(token: string, ids?: number[]) {
   window.URL.revokeObjectURL(url);
 }
 
-export async function importOrdersExcelAi(token: string, file: File) {
-  const formData = new FormData();
-  formData.append("file", file);
-
-  const response = await fetch(`${API_BASE_URL}/orders/import-ai`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "ngrok-skip-browser-warning": "true",
-    },
-    body: formData,
-  });
-
-  if (!response.ok) {
-    throw new Error(await getErrorMessage(response));
-  }
-
-  const orders = (await response.json()) as BackendOrder[];
-  return orders.map(mapOrder);
-}
-
 type BackendOrderDocument = {
   id: number;
   order_id: number | null;

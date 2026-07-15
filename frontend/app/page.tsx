@@ -27,7 +27,6 @@ import {
   getOrders,
   getUsers,
   importOrdersExcel,
-  importOrdersExcelAi,
   login,
   markOrderDelivered,
   markOrderPaid,
@@ -544,20 +543,6 @@ export default function Home() {
     }
   }
 
-  async function handleImportOrdersAi(file: File) {
-    setError("");
-
-    try {
-      await importOrdersExcelAi(token, file);
-      await refreshOrders();
-      await refreshInventory();
-
-      showToast("AI cleaned orders imported");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to AI import orders");
-    }
-  }
-
   async function handleExportAllOrders() {
     setError("");
 
@@ -834,7 +819,6 @@ export default function Home() {
             onAddOrder={() => goToAddOrder()}
             onAddOrderFromInventory={(item) => goToAddOrder(item)}
             onImportExcel={handleImportOrders}
-            onImportExcelAi={handleImportOrdersAi}
             onExportAll={handleExportAllOrders}
             onExportSelected={handleExportSelectedOrders}
             onUploadDocument={handleUploadOrderDocument}

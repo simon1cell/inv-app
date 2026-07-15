@@ -8,7 +8,6 @@ from jose import jwt
 from io import BytesIO
 from fastapi.responses import StreamingResponse, FileResponse
 from openpyxl import Workbook, load_workbook
-from ai_import import clean_orders_with_gemini
 import models
 import schemas
 import crud
@@ -846,53 +845,6 @@ def export_orders(
             "Content-Disposition": 'attachment; filename="orders.xlsx"'
         },
     )
-
-@app.post("/orders/import-ai", response_model=list[schemas.OrderResponse])
-async def import_orders_ai(
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_user=Depends(auth.require_role("admin")),
-):
-    filename = file.filename or ""
-
-    if not filename.endswith((".xlsx", ".xlsm")):
-        raise HTTPException(status_code=400, detail="Please upload an .xlsx file")
-
-    content = await file.read()
-    workbook = load_workbook(BytesIO(content), data_only=True)
-    sheet = workbook.active
-
-    ai_rows = excel_rows_for_ai(sheet)
-
-    created_orders = []
-
-    chunk_size = 40
-
-    for start in range(0, len(ai_rows), chunk_size):
-        chunk = ai_rows[start:start + chunk_size]
-
-        cleaned = clean_orders_with_gemini(chunk)
-
-        for cleaned_order in cleaned.orders:
-            if is_service_order(cleaned_order.model_dump()):
-                continue
-
-            try:
-                payload = schemas.OrderCreate(**cleaned_order.model_dump())
-            except Exception:
-                continue
-
-            created_orders.append(crud.create_order(db, payload))
-
-    if created_orders:
-        crud.create_audit_log(
-            db,
-            username=current_user.username,
-            action="AI_IMPORT_ORDERS",
-            item_id=None,
-            details=f"AI imported {len(created_orders)} orders from {filename}",
-        )
-    return created_orders
 
 @app.get(
     "/orders/{order_id}/documents",
