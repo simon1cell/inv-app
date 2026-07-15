@@ -201,10 +201,11 @@ export default function Home() {
     }, 2500);
   }
 
-  function goToAddItem() {
+  async function goToAddItem() {
     if (!isAdmin) return;
 
     setEditingItem(null);
+    await refreshOrders();
     setView("add-item");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -400,6 +401,7 @@ export default function Home() {
 
     try {
       await createOrderRecord(token, {
+        item_type_id: order.itemTypeId ?? null,
         order_date: toApiDate(order.dateOrdered),
         order_placed_by: order.orderPlacedBy || user?.username || null,
         po_number: order.poNumber || null,
@@ -744,6 +746,8 @@ export default function Home() {
         {isAdmin && view === "add-item" && (
           <AddItemForm
             mode="create"
+            itemTypes={itemTypes}
+            orders={orders}
             onBack={() => setView("inventory")}
             onSubmitItem={handleCreateItem}
           />
@@ -753,6 +757,8 @@ export default function Home() {
           <AddItemForm
             mode="edit"
             item={editingItem}
+            itemTypes={itemTypes}
+            orders={orders}
             onBack={() => {
               setEditingItem(null);
               setView("inventory");
@@ -765,6 +771,7 @@ export default function Home() {
           <AddOrderForm
             initialItem={orderSeedItem}
             inventoryItems={inventory}
+            itemTypes={itemTypes}
             onBack={() => {
               setOrderSeedItem(null);
               setView("orders");

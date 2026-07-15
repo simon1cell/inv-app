@@ -1,15 +1,18 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
+
 import {
   todayInputValue,
   type InventoryItem,
+  type ItemType,
   type Order,
 } from "@/types/inventory";
 
 type AddOrderFormProps = {
   initialItem?: InventoryItem | null;
   inventoryItems: InventoryItem[];
+  itemTypes: ItemType[];
   onBack: () => void;
   onSubmitOrder: (order: Order) => void;
 };
@@ -19,19 +22,27 @@ function moneyString(value: number) {
   return String(Number(value.toFixed(2)));
 }
 
+function cleanBrand(value?: string | null) {
+  if (!value || value === "—") return "";
+  return value;
+}
+
 export default function AddOrderForm({
   initialItem,
   inventoryItems,
+  itemTypes,
   onBack,
   onSubmitOrder,
 }: AddOrderFormProps) {
   const [finalPriceTouched, setFinalPriceTouched] = useState(false);
 
   const [form, setForm] = useState({
+    itemTypeId: initialItem?.itemTypeId ? String(initialItem.itemTypeId) : "",
+    existingItemId: initialItem?.id ?? "",
     dateOrdered: todayInputValue(),
     orderPlacedBy: "",
     poNumber: "",
-    vendor: initialItem?.brand === "—" ? "" : initialItem?.brand ?? "",
+    vendor: cleanBrand(initialItem?.brand),
     category: initialItem?.category ?? "",
     catalogNo: initialItem?.catalogueNum ?? "",
     itemName: initialItem?.itemName ?? "",
@@ -54,7 +65,8 @@ export default function AddOrderForm({
 
   const formValid = useMemo(() => {
     return Boolean(
-      form.dateOrdered &&
+      form.itemTypeId &&
+        form.dateOrdered &&
         form.vendor &&
         form.catalogNo &&
         form.itemName &&
@@ -64,44 +76,112 @@ export default function AddOrderForm({
     );
   }, [form]);
 
+  const sortedItemTypes = useMemo(() => {
+    return [...itemTypes].sort((a, b) => a.name.localeCompare(b.name));
+  }, [itemTypes]);
+
+  const sortedInventoryItems = useMemo(() => {
+    return [...inventoryItems].sort((a, b) =>
+      a.itemName.localeCompare(b.itemName),
+    );
+  }, [inventoryItems]);
+
   function findInventoryMatch(name: keyof typeof form, value: string) {
-  const normalized = value.trim().toLowerCase();
+    const normalized = value.trim().toLowerCase();
 
-  if (!normalized) return null;
+    if (!normalized) return null;
 
-  if (name === "catalogNo") {
+    if (name === "catalogNo") {
+      return (
+        inventoryItems.find(
+          (item) => item.catalogueNum.toLowerCase() === normalized,
+        ) ?? null
+      );
+    }
+
+    if (name === "itemName") {
+      return (
+        inventoryItems.find(
+          (item) => item.itemName.toLowerCase() === normalized,
+        ) ?? null
+      );
+    }
+
+    return null;
+  }
+
+  function findItemTypeByName(value: string) {
+    const normalized = value.trim().toLowerCase();
+
+    if (!normalized) return null;
+
     return (
-      inventoryItems.find(
-        (item) => item.catalogueNum.toLowerCase() === normalized,
-      ) ?? null
+      itemTypes.find((itemType) => itemType.name.toLowerCase() === normalized) ??
+      null
     );
   }
 
-  if (name === "itemName") {
-    return (
-      inventoryItems.find(
-        (item) => item.itemName.toLowerCase() === normalized,
-      ) ?? null
-    );
+  function applyInventoryItem(
+    next: typeof form,
+    item: InventoryItem,
+  ): typeof form {
+    return {
+      ...next,
+      existingItemId: item.id,
+      itemTypeId: item.itemTypeId ? String(item.itemTypeId) : next.itemTypeId,
+      itemName: item.itemName,
+      catalogNo: item.catalogueNum,
+      vendor: cleanBrand(item.brand),
+      category: item.category,
+    };
   }
 
-  return null;
-}
+  function applyItemType(next: typeof form, itemType: ItemType): typeof form {
+    return {
+      ...next,
+      itemTypeId: String(itemType.id),
+      itemName: next.itemName || itemType.name,
+      category: next.category || itemType.category || "",
+    };
+  }
 
   function updateField(name: keyof typeof form, value: string) {
     setForm((current) => {
-      const next = {
+      let next = {
         ...current,
         [name]: value,
       };
 
-      const match = findInventoryMatch(name, value);
+      if (name === "existingItemId") {
+        const item = inventoryItems.find((candidate) => candidate.id === value);
 
-      if (match) {
-        next.itemName = match.itemName;
-        next.catalogNo = match.catalogueNum;
-        next.vendor = match.brand === "—" ? "" : match.brand;
-        next.category = match.category;
+        if (item) {
+          next = applyInventoryItem(next, item);
+        }
+      }
+
+      if (name === "itemTypeId") {
+        const itemType = itemTypes.find(
+          (candidate) => String(candidate.id) === value,
+        );
+
+        if (itemType) {
+          next = applyItemType(next, itemType);
+        }
+      }
+
+      const inventoryMatch = findInventoryMatch(name, value);
+
+      if (inventoryMatch) {
+        next = applyInventoryItem(next, inventoryMatch);
+      }
+
+      if (name === "itemName") {
+        const itemTypeMatch = findItemTypeByName(value);
+
+        if (itemTypeMatch) {
+          next = applyItemType(next, itemTypeMatch);
+        }
       }
 
       if (name === "finalPrice") {
@@ -116,9 +196,7 @@ export default function AddOrderForm({
         name === "pricePerUnit" ? value : next.pricePerUnit,
       );
 
-      const total = Number(
-        name === "totalPrice" ? value : next.totalPrice,
-      );
+      const total = Number(name === "totalPrice" ? value : next.totalPrice);
 
       if (name === "unitsOrdered" || name === "pricePerUnit") {
         if (Number.isFinite(units) && units > 0 && Number.isFinite(price)) {
@@ -156,6 +234,7 @@ export default function AddOrderForm({
 
     onSubmitOrder({
       id: Date.now(),
+      itemTypeId: Number(form.itemTypeId),
 
       dateOrdered: form.dateOrdered,
       orderPlacedBy: form.orderPlacedBy,
@@ -199,6 +278,47 @@ export default function AddOrderForm({
         </div>
 
         <div className="grid">
+          <div className="field">
+            <label>
+              Item Type <span className="req-star">*</span>
+            </label>
+            <div className="control">
+              <select
+                value={form.itemTypeId}
+                onChange={(event) =>
+                  updateField("itemTypeId", event.target.value)
+                }
+              >
+                <option value="">Select item type</option>
+                {sortedItemTypes.map((itemType) => (
+                  <option key={itemType.id} value={itemType.id}>
+                    {itemType.name}
+                    {itemType.category ? ` · ${itemType.category}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="field">
+            <label>Autofill From Existing Item</label>
+            <div className="control">
+              <select
+                value={form.existingItemId}
+                onChange={(event) =>
+                  updateField("existingItemId", event.target.value)
+                }
+              >
+                <option value="">Select existing item</option>
+                {sortedInventoryItems.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.itemName} · {item.catalogueNum} · {item.brand}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           <div className="field">
             <label>
               Date <span className="req-star">*</span>
@@ -273,7 +393,9 @@ export default function AddOrderForm({
                 list="catalog-number-suggestions"
                 placeholder="Q32856"
                 value={form.catalogNo}
-                onChange={(event) => updateField("catalogNo", event.target.value)}
+                onChange={(event) =>
+                  updateField("catalogNo", event.target.value)
+                }
               />
             </div>
           </div>
@@ -502,10 +624,17 @@ export default function AddOrderForm({
             Submit Order
           </button>
         </div>
+
         <datalist id="item-name-suggestions">
           {inventoryItems.map((item) => (
             <option key={item.id} value={item.itemName}>
               {item.catalogueNum}
+            </option>
+          ))}
+
+          {itemTypes.map((itemType) => (
+            <option key={`type-${itemType.id}`} value={itemType.name}>
+              {itemType.category ?? ""}
             </option>
           ))}
         </datalist>
@@ -519,19 +648,24 @@ export default function AddOrderForm({
         </datalist>
 
         <datalist id="vendor-suggestions">
-          {[...new Set(inventoryItems.map((item) => item.brand).filter(Boolean))].map(
-            (brand) => (
+          {[...new Set(inventoryItems.map((item) => item.brand).filter(Boolean))]
+            .filter((brand) => brand !== "—")
+            .map((brand) => (
               <option key={brand} value={brand} />
-            ),
-          )}
+            ))}
         </datalist>
 
         <datalist id="category-suggestions">
-          {[...new Set(inventoryItems.map((item) => item.category).filter(Boolean))].map(
-            (category) => (
+          {[
+            ...new Set([
+              ...inventoryItems.map((item) => item.category),
+              ...itemTypes.map((itemType) => itemType.category ?? ""),
+            ]),
+          ]
+            .filter(Boolean)
+            .map((category) => (
               <option key={category} value={category} />
-            ),
-          )}
+            ))}
         </datalist>
       </form>
     </section>

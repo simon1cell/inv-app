@@ -20,6 +20,7 @@ export type ItemType = {
   name: string;
   category: string | null;
   brand: string | null;
+  brands?: string[];
   reorderThreshold: number;
   criticalThreshold: number;
   notes: string | null;
@@ -30,6 +31,7 @@ export type ItemType = {
 export type InventoryItem = {
   id: string;
   no: number;
+  itemTypeId?: number | null;
   itemName: string;
   category: string;
   brand: string;
@@ -54,6 +56,7 @@ export type ItemComment = {
 
 export type Order = {
   id: number;
+  itemTypeId?: number | null;
 
   dateOrdered: string;
   orderPlacedBy?: string;
@@ -84,6 +87,7 @@ export type Order = {
 
 export type OrderRecord = {
   id: number;
+  itemTypeId: number | null;
   orderDate: string | null;
   orderPlacedBy: string | null;
   poNumber: string | null;
@@ -123,6 +127,37 @@ export type UserAccount = {
   username: string;
   role: string;
 };
+
+export type OrderDocument = {
+  id: number;
+  orderId: number | null;
+  documentType: string;
+  source: string;
+  sender: string | null;
+  subject: string | null;
+  originalFilename: string | null;
+  contentType: string | null;
+  confidence: number | null;
+  reviewed: boolean;
+  receivedAt: string;
+};
+
+export type OrderEvent = {
+  id: number;
+  orderId: number;
+  eventType: string;
+  notes: string | null;
+  createdBy: string | null;
+  createdAt: string;
+};
+
+export type OrderDocumentType =
+  | "confirmation"
+  | "invoice"
+  | "delivery"
+  | "packing_slip"
+  | "shipping"
+  | "other";
 
 export const STATUS_LABEL: Record<Status, string> = {
   high: "High",
@@ -181,34 +216,3 @@ export function toDisplayDate(value: string) {
 
   return value;
 }
-
-export type OrderDocument = {
-  id: number;
-  orderId: number | null;
-  documentType: string;
-  source: string;
-  sender: string | null;
-  subject: string | null;
-  originalFilename: string | null;
-  contentType: string | null;
-  confidence: number | null;
-  reviewed: boolean;
-  receivedAt: string;
-};
-
-export type OrderEvent = {
-  id: number;
-  orderId: number;
-  eventType: string;
-  notes: string | null;
-  createdBy: string | null;
-  createdAt: string;
-};
-
-export type OrderDocumentType =
-  | "confirmation"
-  | "invoice"
-  | "delivery"
-  | "packing_slip"
-  | "shipping"
-  | "other";

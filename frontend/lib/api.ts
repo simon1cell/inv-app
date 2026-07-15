@@ -40,6 +40,7 @@ type BackendItemType = {
   name: string;
   category: string | null;
   brand: string | null;
+  brands?: string[] | null;
   reorder_threshold: number;
   critical_threshold: number;
   notes: string | null;
@@ -273,11 +274,20 @@ function parseTags(value: string | null | undefined) {
 }
 
 function mapItemType(itemType: BackendItemType): ItemType {
+  const brands =
+    itemType.brands?.filter(Boolean) ??
+    itemType.brand
+      ?.split(",")
+      .map((brand) => brand.trim())
+      .filter(Boolean) ??
+    [];
+
   return {
     id: itemType.id,
     name: itemType.name,
     category: itemType.category,
-    brand: itemType.brand,
+    brand: brands.length > 0 ? brands.join(", ") : itemType.brand,
+    brands,
     reorderThreshold: itemType.reorder_threshold,
     criticalThreshold: itemType.critical_threshold,
     notes: itemType.notes,
@@ -292,6 +302,7 @@ function mapItem(item: BackendItem): InventoryItem {
   return {
     id: item.catalogue_num,
     no: item.id ?? 0,
+    itemTypeId: item.item_type_id ?? null,
     itemName: item.item_name,
     category: item.category ?? "Uncategorized",
     brand: item.brand ?? "—",
@@ -324,6 +335,7 @@ function mapAuditLog(log: BackendAuditLog): AuditLog {
 function mapOrder(order: BackendOrder): OrderRecord {
   return {
     id: order.id,
+    itemTypeId: order.item_type_id ?? null,
     orderDate: order.order_date,
     orderPlacedBy: order.order_placed_by,
     poNumber: order.po_number,
@@ -386,6 +398,7 @@ function mapOrderEvent(event: BackendOrderEvent): OrderEvent {
 
 export async function login(username: string, password: string) {
   const body = new URLSearchParams();
+
   body.append("username", username);
   body.append("password", password);
 
@@ -533,6 +546,7 @@ export async function createOrderRecord(token: string, payload: OrderPayload) {
 
 export async function importOrdersExcel(token: string, file: File) {
   const formData = new FormData();
+
   formData.append("file", file);
 
   const response = await fetch(`${API_BASE_URL}/orders/import`, {
@@ -614,6 +628,7 @@ export async function uploadOrderDocument(
   file: File,
 ) {
   const formData = new FormData();
+
   formData.append("file", file);
 
   const response = await fetch(
