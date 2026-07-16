@@ -87,7 +87,6 @@ def get_items_filtered(
 
     return query.all()
 
-
 def get_item_types(db: Session):
     item_types = db.query(models.ItemType).order_by(models.ItemType.name.asc()).all()
 
@@ -102,25 +101,23 @@ def get_item_types(db: Session):
 
         total_quantity = sum(item.quantity or 0 for item in linked_items)
 
-        brands = sorted(
+        active_brands = sorted(
             {
                 item.brand.strip()
                 for item in linked_items
-                if item.brand and item.brand.strip() and item.brand.strip() != "—"
+                if item.quantity > 0
+                and item.brand
+                and item.brand.strip()
+                and item.brand.strip() != "—"
             }
         )
-
-        if brands:
-            brand = ", ".join(brands)
-        else:
-            brand = item_type.brand
 
         results.append(
             {
                 "id": item_type.id,
                 "name": item_type.name,
                 "category": item_type.category,
-                "brand": brand,
+                "brand": ", ".join(active_brands) if active_brands else None,
                 "reorder_threshold": item_type.reorder_threshold,
                 "critical_threshold": item_type.critical_threshold,
                 "notes": item_type.notes,
