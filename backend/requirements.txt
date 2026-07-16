@@ -31,3 +31,6 @@ uvicorn==0.49.0
 python-dotenv
 python-multipart
 openpyxl
+pytest
+pytest-asyncio
+

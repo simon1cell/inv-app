@@ -360,6 +360,259 @@ def delete_item_comment(db: Session, comment_id: int):
 
     return comment
 
+def get_item_comment_read(db: Session, username: str, item_id: str):
+    return (
+        db.query(models.ItemCommentRead)
+        .filter(
+            models.ItemCommentRead.username == username,
+            models.ItemCommentRead.item_id == str(item_id),
+        )
+        .first()
+    )
+
+
+def get_unread_comment_count(db: Session, username: str, item_id: str):
+    read_state = get_item_comment_read(db, username, item_id)
+
+    query = (
+        db.query(models.ItemComment)
+        .filter(models.ItemComment.item_id == str(item_id))
+        .filter(models.ItemComment.username != username)
+    )
+
+    if read_state:
+        query = query.filter(models.ItemComment.created_at > read_state.last_seen_at)
+
+    return query.count()
+
+
+def get_latest_unread_comment(db: Session, username: str, item_id: str):
+    read_state = get_item_comment_read(db, username, item_id)
+
+    query = (
+        db.query(models.ItemComment)
+        .filter(models.ItemComment.item_id == str(item_id))
+        .filter(models.ItemComment.username != username)
+    )
+
+    if read_state:
+        query = query.filter(models.ItemComment.created_at > read_state.last_seen_at)
+
+    return query.order_by(models.ItemComment.created_at.desc()).first()
+
+
+def get_comment_notifications(db: Session, username: str):
+    items = db.query(models.Item).all()
+
+    item_notifications = []
+    item_type_map = {}
+
+    for item in items:
+        unread_count = get_unread_comment_count(db, username, item.catalogue_num)
+
+        if unread_count <= 0:
+            continue
+
+        latest_comment = get_latest_unread_comment(db, username, item.catalogue_num)
+
+        item_notification = {
+            "item_id": item.catalogue_num,
+            "item_type_id": item.item_type_id,
+            "item_name": item.item_name,
+            "catalogue_num": item.catalogue_num,
+            "brand": item.brand,
+            "unread_count": unread_count,
+            "latest_comment": latest_comment.comment if latest_comment else None,
+            "latest_comment_at": latest_comment.created_at if latest_comment else None,
+            "latest_comment_by": latest_comment.username if latest_comment else None,
+        }
+
+        item_notifications.append(item_notification)
+
+        if item.item_type_id:
+            current = item_type_map.get(item.item_type_id)
+
+            if current is None:
+                item_type = (
+                    db.query(models.ItemType)
+                    .filter(models.ItemType.id == item.item_type_id)
+                    .first()
+                )
+
+                item_type_map[item.item_type_id] = {
+                    "item_type_id": item.item_type_id,
+                    "item_type_name": item_type.name if item_type else item.item_name,
+                    "unread_count": unread_count,
+                    "latest_comment": latest_comment.comment if latest_comment else None,
+                    "latest_comment_at": latest_comment.created_at if latest_comment else None,
+                    "latest_comment_by": latest_comment.username if latest_comment else None,
+                }
+            else:
+                current["unread_count"] += unread_count
+
+                current_latest = current.get("latest_comment_at")
+                new_latest = latest_comment.created_at if latest_comment else None
+
+                if new_latest and (current_latest is None or new_latest > current_latest):
+                    current["latest_comment"] = latest_comment.comment
+                    current["latest_comment_at"] = latest_comment.created_at
+                    current["latest_comment_by"] = latest_comment.username
+
+    item_notifications.sort(
+        key=lambda item: item["latest_comment_at"] or datetime.min,
+        reverse=True,
+    )
+
+    item_type_notifications = sorted(
+        item_type_map.values(),
+        key=lambda item: item["latest_comment_at"] or datetime.min,
+        reverse=True,
+    )
+
+    return {
+        "total_unread": sum(item["unread_count"] for item in item_notifications),
+        "items": item_notifications,
+        "item_types": item_type_notifications,
+    }
+
+def mark_item_comments_read(db: Session, username: str, item_id: str):
+    item = get_item(db, item_id)
+
+    if item is None:
+        return None
+
+    marked_read = get_unread_comment_count(db, username, item_id)
+    read_state = get_item_comment_read(db, username, item_id)
+
+    if read_state is None:
+        read_state = models.ItemCommentRead(
+            username=username,
+            item_id=str(item_id),
+            last_seen_at=datetime.utcnow(),
+        )
+        db.add(read_state)
+    else:
+        read_state.last_seen_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(read_state)
+
+    return {
+        "message": "Comments marked read",
+        "marked_read": marked_read,
+    }
+
+def mark_item_type_comments_read(db: Session, username: str, item_type_id: int):
+    items = (
+        db.query(models.Item)
+        .filter(models.Item.item_type_id == item_type_id)
+        .all()
+    )
+
+    if not items:
+        return {
+            "message": "No linked items found",
+            "marked_read": 0,
+        }
+
+    marked_read = 0
+    now = datetime.utcnow()
+
+    for item in items:
+        marked_read += get_unread_comment_count(db, username, item.catalogue_num)
+
+        read_state = get_item_comment_read(db, username, item.catalogue_num)
+
+        if read_state is None:
+            db.add(
+                models.ItemCommentRead(
+                    username=username,
+                    item_id=item.catalogue_num,
+                    last_seen_at=now,
+                )
+            )
+        else:
+            read_state.last_seen_at = now
+
+    db.commit()
+
+    return {
+        "message": "Item type comments marked read",
+        "marked_read": marked_read,
+    }
+
+def get_item_type_comments(db: Session, item_type_id: int):
+    items = (
+        db.query(models.Item)
+        .filter(models.Item.item_type_id == item_type_id)
+        .all()
+    )
+
+    item_ids = [item.catalogue_num for item in items]
+
+    if not item_ids:
+        return []
+
+    return (
+        db.query(models.ItemComment)
+        .filter(models.ItemComment.item_id.in_(item_ids))
+        .order_by(models.ItemComment.created_at.desc())
+        .all()
+    )
+
+def get_item_type_by_id(db: Session, item_type_id: int):
+    return (
+        db.query(models.ItemType)
+        .filter(models.ItemType.id == item_type_id)
+        .first()
+    )
+
+def update_item_type(
+    db: Session,
+    item_type_id: int,
+    payload: schemas.ItemTypeUpdate,
+):
+    item_type = get_item_type_by_id(db, item_type_id)
+
+    if item_type is None:
+        return None
+
+    update_data = payload.model_dump(exclude_unset=True)
+
+    for key, value in update_data.items():
+        setattr(item_type, key, value)
+
+    db.commit()
+    db.refresh(item_type)
+
+    return item_type
+
+def delete_item_type(db: Session, item_type_id: int):
+    item_type = get_item_type_by_id(db, item_type_id)
+
+    if item_type is None:
+        return None
+
+    linked_items_count = (
+        db.query(models.Item)
+        .filter(models.Item.item_type_id == item_type_id)
+        .count()
+    )
+
+    linked_orders_count = (
+        db.query(models.Order)
+        .filter(models.Order.item_type_id == item_type_id)
+        .count()
+    )
+
+    if linked_items_count > 0 or linked_orders_count > 0:
+        return "has_links"
+
+    db.delete(item_type)
+    db.commit()
+
+    return item_type
+
 def create_transaction(db: Session, item_id: str, change_amount: int):
     item = get_item(db, item_id)
 

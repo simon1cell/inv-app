@@ -133,6 +133,36 @@ class ItemCommentResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
+class ItemCommentNotificationResponse(BaseModel):
+    item_id: str
+    item_type_id: int | None = None
+    item_name: str
+    catalogue_num: str
+    brand: str | None = None
+    unread_count: int
+    latest_comment: str | None = None
+    latest_comment_at: datetime | None = None
+    latest_comment_by: str | None = None
+
+class ItemTypeCommentNotificationResponse(BaseModel):
+    item_type_id: int
+    item_type_name: str
+    unread_count: int
+    latest_comment: str | None = None
+    latest_comment_at: datetime | None = None
+    latest_comment_by: str | None = None
+
+
+class CommentNotificationSummaryResponse(BaseModel):
+    total_unread: int
+    items: list[ItemCommentNotificationResponse]
+    item_types: list[ItemTypeCommentNotificationResponse]
+
+
+class MarkCommentsReadResponse(BaseModel):
+    message: str
+    marked_read: int
+
 class DashBoardStats(BaseModel):
     out_of_stock: int
     critical: int

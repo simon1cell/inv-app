@@ -541,6 +541,73 @@ def create_item_type(
         "total_quantity": 0,
     }
 
+@app.put("/item-types/{item_type_id}", response_model=schemas.ItemTypeResponse)
+def update_item_type(
+    item_type_id: int,
+    payload: schemas.ItemTypeUpdate,
+    db: Session = Depends(get_db),
+    current_user=Depends(auth.require_role("admin")),
+):
+    item_type = crud.update_item_type(db, item_type_id, payload)
+
+    if item_type is None:
+        raise HTTPException(status_code=404, detail="Item type not found")
+
+    crud.create_audit_log(
+        db,
+        username=current_user.username,
+        action="UPDATE_ITEM_TYPE",
+        item_id=None,
+        details=f"Updated item type {item_type.name}",
+    )
+
+    return {
+        "id": item_type.id,
+        "name": item_type.name,
+        "category": item_type.category,
+        "brand": item_type.brand,
+        "reorder_threshold": item_type.reorder_threshold,
+        "critical_threshold": item_type.critical_threshold,
+        "notes": item_type.notes,
+        "total_quantity": 0,
+    }
+
+@app.delete("/item-types/{item_type_id}", response_model=schemas.ItemTypeResponse)
+def delete_item_type(
+    item_type_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(auth.require_role("admin")),
+):
+    item_type = crud.delete_item_type(db, item_type_id)
+
+    if item_type is None:
+        raise HTTPException(status_code=404, detail="Item type not found")
+
+    if item_type == "has_links":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete item type while inventory items or orders are linked to it",
+        )
+
+    crud.create_audit_log(
+        db,
+        username=current_user.username,
+        action="DELETE_ITEM_TYPE",
+        item_id=None,
+        details=f"Deleted item type {item_type.name}",
+    )
+
+    return {
+        "id": item_type.id,
+        "name": item_type.name,
+        "category": item_type.category,
+        "brand": item_type.brand,
+        "reorder_threshold": item_type.reorder_threshold,
+        "critical_threshold": item_type.critical_threshold,
+        "notes": item_type.notes,
+        "total_quantity": 0,
+    }
+
 @app.post("/register", response_model=schemas.UserResponse)
 def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     user_count = db.query(models.User).count()
@@ -1213,3 +1280,57 @@ def delete_item_comment(
     )
 
     return {"message": "Comment deleted"}
+
+@app.get(
+    "/comments/notifications",
+    response_model=schemas.CommentNotificationSummaryResponse,
+)
+def get_comment_notifications(
+    db: Session = Depends(get_db),
+    current_user=Depends(auth.get_current_user),
+):
+    return crud.get_comment_notifications(db, current_user.username)
+
+
+@app.post(
+    "/items/{item_id}/comments/read",
+    response_model=schemas.MarkCommentsReadResponse,
+)
+def mark_item_comments_read(
+    item_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(auth.get_current_user),
+):
+    result = crud.mark_item_comments_read(db, current_user.username, item_id)
+
+    if result is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    return result
+
+
+@app.post(
+    "/item-types/{item_type_id}/comments/read",
+    response_model=schemas.MarkCommentsReadResponse,
+)
+def mark_item_type_comments_read(
+    item_type_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(auth.get_current_user),
+):
+    return crud.mark_item_type_comments_read(
+        db,
+        current_user.username,
+        item_type_id,
+    )
+
+@app.get(
+    "/item-types/{item_type_id}/comments",
+    response_model=list[schemas.ItemCommentResponse],
+)
+def get_item_type_comments(
+    item_type_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(auth.get_current_user),
+):
+    return crud.get_item_type_comments(db, item_type_id)

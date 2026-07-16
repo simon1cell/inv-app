@@ -1,6 +1,17 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 
 from database import Base
 
@@ -57,6 +68,18 @@ class ItemComment(Base):
     username = Column(String, nullable=False)
     comment = Column(Text, nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class ItemCommentRead(Base):
+    __tablename__ = "item_comment_reads"
+    __table_args__ = (
+        UniqueConstraint("username", "item_id", name="uq_item_comment_reads_username_item_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, nullable=False, index=True)
+    item_id = Column(String, ForeignKey("items.catalogue_num"), nullable=False, index=True)
+    last_seen_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
 class AuditLog(Base):
