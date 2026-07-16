@@ -572,6 +572,7 @@ def update_item_type(
         "total_quantity": 0,
     }
 
+
 @app.delete("/item-types/{item_type_id}", response_model=schemas.ItemTypeResponse)
 def delete_item_type(
     item_type_id: int,

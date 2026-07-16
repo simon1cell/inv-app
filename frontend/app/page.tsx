@@ -16,6 +16,7 @@ import {
   createItem,
   createOrderRecord,
   createUser,
+  deleteItemType,
   deleteOrderDocument,
   deleteUser,
   downloadOrderDocument,
@@ -33,6 +34,7 @@ import {
   markOrderPaid,
   uploadOrderDocument,
   updateItem,
+  updateItemType,
   type CurrentUser,
 } from "@/lib/api";
 
@@ -218,12 +220,77 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function handleEditItemType(item: ItemType) {
-    setError(`Item type editing is not connected yet: ${item.name}`);
+  async function handleEditItemType(item: ItemType) {
+    if (!isAdmin) return;
+
+    const name = window.prompt("Item type name", item.name);
+
+    if (name === null) return;
+
+    const category = window.prompt("Category", item.category ?? "");
+
+    if (category === null) return;
+
+    const reorderThreshold = window.prompt(
+      "Reorder threshold",
+      String(item.reorderThreshold),
+    );
+
+    if (reorderThreshold === null) return;
+
+    const criticalThreshold = window.prompt(
+      "Critical threshold",
+      String(item.criticalThreshold),
+    );
+
+    if (criticalThreshold === null) return;
+
+    const notes = window.prompt("Notes", item.notes ?? "");
+
+    if (notes === null) return;
+
+    setError("");
+
+    try {
+      await updateItemType(token, item.id, {
+        name: name.trim() || item.name,
+        category: category.trim() || null,
+        reorder_threshold: Number(reorderThreshold || item.reorderThreshold),
+        critical_threshold: Number(criticalThreshold || item.criticalThreshold),
+        notes: notes.trim() || null,
+      });
+
+      await refreshInventory();
+
+      showToast("Item type updated");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update item type");
+    }
   }
 
-  function handleDeleteItemType(itemId: number) {
-    setError(`Item type deletion is not connected yet: ${itemId}`);
+  async function handleDeleteItemType(itemId: number) {
+    if (!isAdmin) return;
+
+    const item = itemTypes.find((candidate) => candidate.id === itemId);
+
+    const confirmed = window.confirm(
+      item
+        ? `Delete item type "${item.name}"? This only works if no inventory items or orders are linked to it.`
+        : "Delete this item type?",
+    );
+
+    if (!confirmed) return;
+
+    setError("");
+
+    try {
+      await deleteItemType(token, itemId);
+      await refreshInventory();
+
+      showToast("Item type deleted");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete item type");
+    }
   }
 
   async function refreshInventory(activeToken = token) {

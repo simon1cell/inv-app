@@ -194,6 +194,8 @@ type ItemTypePayload = {
   notes?: string | null;
 };
 
+type ItemTypeUpdatePayload = Partial<ItemTypePayload>;
+
 function authHeaders(token?: string): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
@@ -435,6 +437,34 @@ export async function createItemType(token: string, payload: ItemTypePayload) {
     method: "POST",
     json: payload,
   });
+
+  return mapItemType(itemType);
+}
+export async function updateItemType(
+  token: string,
+  itemTypeId: number,
+  payload: ItemTypeUpdatePayload,
+) {
+  const itemType = await apiRequest<BackendItemType>(
+    `/item-types/${itemTypeId}`,
+    {
+      token,
+      method: "PUT",
+      json: payload,
+    },
+  );
+
+  return mapItemType(itemType);
+}
+
+export async function deleteItemType(token: string, itemTypeId: number) {
+  const itemType = await apiRequest<BackendItemType>(
+    `/item-types/${itemTypeId}`,
+    {
+      token,
+      method: "DELETE",
+    },
+  );
 
   return mapItemType(itemType);
 }
