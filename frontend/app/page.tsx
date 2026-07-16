@@ -76,6 +76,12 @@ type CommentRow = ItemComment & {
   catalogueNum: string;
 };
 
+const EMPTY_NOTIFICATIONS: CommentNotificationSummary = {
+  totalUnread: 0,
+  items: [],
+  itemTypes: [],
+};
+
 function getInitials(username: string) {
   return (
     username
@@ -136,12 +142,6 @@ function withTimeout<T>(promise: Promise<T>, ms = 5000): Promise<T> {
   ]);
 }
 
-const EMPTY_NOTIFICATIONS: CommentNotificationSummary = {
-  totalUnread: 0,
-  items: [],
-  itemTypes: [],
-};
-
 export default function Home() {
   const [view, setView] = useState<View>("inventory");
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
@@ -189,7 +189,7 @@ export default function Home() {
     };
   }, [itemTypes]);
 
-  const commentCountsByItemId = useMemo(() => {
+  const unreadCommentCountsByItemId = useMemo<Record<string, number>>(() => {
     return Object.fromEntries(
       commentNotifications.items.map((item) => [
         item.itemId,
@@ -198,7 +198,7 @@ export default function Home() {
     );
   }, [commentNotifications]);
 
-  const commentCountsByItemTypeId = useMemo(() => {
+  const unreadCommentCountsByItemTypeId = useMemo<Record<number, number>>(() => {
     return Object.fromEntries(
       commentNotifications.itemTypes.map((itemType) => [
         itemType.itemTypeId,
@@ -207,7 +207,30 @@ export default function Home() {
     );
   }, [commentNotifications]);
 
-  const totalCommentCount = commentNotifications.totalUnread;
+  const totalCommentCountsByItemId = useMemo<Record<string, number>>(() => {
+    return Object.fromEntries(
+      Object.entries(commentsByItemId).map(([itemId, comments]) => [
+        itemId,
+        comments.length,
+      ]),
+    );
+  }, [commentsByItemId]);
+
+  const totalCommentCountsByItemTypeId = useMemo<Record<number, number>>(() => {
+    const counts: Record<number, number> = {};
+
+    for (const item of inventory) {
+      if (!item.itemTypeId) continue;
+
+      counts[item.itemTypeId] =
+        (counts[item.itemTypeId] ?? 0) +
+        (totalCommentCountsByItemId[item.id] ?? 0);
+    }
+
+    return counts;
+  }, [inventory, totalCommentCountsByItemId]);
+
+  const totalUnreadCommentCount = commentNotifications.totalUnread;
 
   const activeCommentRows = useMemo<CommentRow[]>(() => {
     if (!commentTarget) return [];
@@ -225,27 +248,27 @@ export default function Home() {
     return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [commentTarget, commentsByItemId, inventory]);
 
-  const topCommentItems = useMemo(() => {
+  const topUnreadCommentItems = useMemo(() => {
     return inventory
       .map((item) => ({
         item,
-        count: commentCountsByItemId[item.id] ?? 0,
+        count: unreadCommentCountsByItemId[item.id] ?? 0,
       }))
       .filter((entry) => entry.count > 0)
       .sort((a, b) => b.count - a.count)
       .slice(0, 6);
-  }, [commentCountsByItemId, inventory]);
+  }, [unreadCommentCountsByItemId, inventory]);
 
-  const topCommentItemTypes = useMemo(() => {
+  const topUnreadCommentItemTypes = useMemo(() => {
     return itemTypes
       .map((itemType) => ({
         itemType,
-        count: commentCountsByItemTypeId[itemType.id] ?? 0,
+        count: unreadCommentCountsByItemTypeId[itemType.id] ?? 0,
       }))
       .filter((entry) => entry.count > 0)
       .sort((a, b) => b.count - a.count)
       .slice(0, 6);
-  }, [commentCountsByItemTypeId, itemTypes]);
+  }, [unreadCommentCountsByItemTypeId, itemTypes]);
 
   useEffect(() => {
     async function loadSavedSession() {
@@ -1001,7 +1024,7 @@ export default function Home() {
           name={user.username}
           email={`${user.role} account`}
           initials={getInitials(user.username)}
-          commentCount={totalCommentCount}
+          commentCount={totalUnreadCommentCount}
           onCommentsClick={() => {
             setCommentTarget(null);
             setShowCommentOverview((current) => !current);
@@ -1024,7 +1047,7 @@ export default function Home() {
                 <div>
                   <h2>Unread Comment Center</h2>
                   <p className="sub">
-                    {totalCommentCount} unread comments across inventory
+                    {totalUnreadCommentCount} unread comments across inventory
                   </p>
                 </div>
 
@@ -1040,11 +1063,11 @@ export default function Home() {
               <div className="toolbar">
                 <div>
                   <h3>Item Types</h3>
-                  {topCommentItemTypes.length === 0 && (
+                  {topUnreadCommentItemTypes.length === 0 && (
                     <p className="sub">No unread item type comments.</p>
                   )}
 
-                  {topCommentItemTypes.map(({ itemType, count }) => (
+                  {topUnreadCommentItemTypes.map(({ itemType, count }) => (
                     <button
                       key={itemType.id}
                       type="button"
@@ -1058,11 +1081,11 @@ export default function Home() {
 
                 <div>
                   <h3>Stock Items</h3>
-                  {topCommentItems.length === 0 && (
+                  {topUnreadCommentItems.length === 0 && (
                     <p className="sub">No unread stock item comments.</p>
                   )}
 
-                  {topCommentItems.map(({ item, count }) => (
+                  {topUnreadCommentItems.map(({ item, count }) => (
                     <button
                       key={item.id}
                       type="button"
@@ -1213,7 +1236,7 @@ export default function Home() {
             <InventoryTable
               items={itemTypes}
               isAdmin={isAdmin}
-              commentCountsByItemTypeId={commentCountsByItemTypeId}
+              commentCountsByItemTypeId={totalCommentCountsByItemTypeId}
               onAddItem={goToAddItem}
               onEditItem={handleEditItemType}
               onDeleteItem={handleDeleteItemType}
@@ -1230,7 +1253,7 @@ export default function Home() {
               items={inventory}
               itemTypes={itemTypes}
               isAdmin={isAdmin}
-              commentCountsByItemId={commentCountsByItemId}
+              commentCountsByItemId={totalCommentCountsByItemId}
               onAddItem={goToAddItem}
               onEditItem={handleEditStockItem}
               onDeleteItem={handleDeleteStockItem}
