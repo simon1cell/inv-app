@@ -64,6 +64,7 @@ type BackendItem = {
   shelf_num?: string | null;
   tags?: string | null;
   last_used_at?: string | null;
+  is_archived?: boolean | null;
 };
 
 type BackendAuditLog = {
@@ -317,6 +318,7 @@ function mapItem(item: BackendItem): InventoryItem {
     status: getStatusFromQuantity(quantity),
     tags: parseTags(item.tags),
     lastUsedAt: item.last_used_at ?? null,
+    isArchived: item.is_archived ?? false,
   };
 }
 

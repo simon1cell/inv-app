@@ -58,6 +58,7 @@ class Item(Base):
     shelf_num = Column(String, nullable=True)
     tags = Column(String, default="", nullable=True)
     last_used_at = Column(DateTime, nullable=True)
+    is_archived = Column(Boolean, default=False, nullable=False)
 
 
 class ItemComment(Base):

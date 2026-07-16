@@ -31,7 +31,11 @@ def create_item(db: Session, item: schemas.ItemCreate):
     return db_item
 
 def get_items(db: Session):
-    return db.query(models.Item).all()
+    return (
+        db.query(models.Item)
+        .filter(models.Item.is_archived == False)
+        .all()
+    )
 
 def get_item(db: Session, item_id: str):
     return (
@@ -48,13 +52,17 @@ def get_items_filtered(
         status: str | None = None,
         category: str | None = None,
         shelf_num: str | None = None,
+        include_archived: bool = False,
 ):
     query = db.query(models.Item)
+
+    if not include_archived:
+        query = query.filter(models.Item.is_archived == False)
 
     if name:
         query = query.filter(models.Item.item_name.ilike(f"%{name}%"))
 
-    if storage_id: 
+    if storage_id:
         query = query.filter(models.Item.storage_id == storage_id)
 
     if expiring_before:
@@ -70,14 +78,17 @@ def get_items_filtered(
         query = query.filter(models.Item.shelf_num == shelf_num)
 
     elif status == "critical":
-        query = query.filter(models.Item.quantity > 0, models.Item.quantity <= models.Item.critical_threshold)
-    
+        query = query.filter(
+            models.Item.quantity > 0,
+            models.Item.quantity <= models.Item.critical_threshold,
+        )
+
     elif status == "low_stock":
         query = query.filter(models.Item.quantity <= models.Item.reorder_threshold)
-    
+
     elif status == "expiring_soon":
         today = date.today()
-        soon = today + timedelta(days = 14)
+        soon = today + timedelta(days=14)
 
         query = query.filter(
             models.Item.expiry_date != None,
@@ -96,6 +107,7 @@ def get_item_types(db: Session):
         linked_items = (
             db.query(models.Item)
             .filter(models.Item.item_type_id == item_type.id)
+            .filter(models.Item.is_archived == False)
             .all()
         )
 
@@ -190,10 +202,23 @@ def resolve_order_item_type(db: Session, order_data: dict):
 
 def delete_item(db: Session, item_id: str):
     db_item = get_item(db, item_id)
+
     if db_item is None:
         return None
-    db.delete(db_item)
+
+    db_item.is_archived = True
+    db_item.quantity = 0
+
+    tags = set()
+
+    if db_item.tags:
+        tags = set(tag.strip() for tag in db_item.tags.split(",") if tag.strip())
+
+    tags.add("archived")
+    db_item.tags = ",".join(sorted(tags))
+
     db.commit()
+    db.refresh(db_item)
 
     return db_item
 
@@ -793,8 +818,17 @@ def create_inventory_placeholder_from_order(db: Session, order: models.Order):
     existing_item = get_item_by_catalogue_num(db, catalogue_num)
 
     if existing_item is not None:
+        changed = False
+
         if order.item_type_id and not existing_item.item_type_id:
             existing_item.item_type_id = order.item_type_id
+            changed = True
+
+        if existing_item.is_archived:
+            existing_item.is_archived = False
+            changed = True
+
+        if changed:
             db.commit()
             db.refresh(existing_item)
 
@@ -829,6 +863,7 @@ def create_inventory_placeholder_from_order(db: Session, order: models.Order):
         category=order.category or "Uncategorized",
         shelf_num=None,
         tags="order,pending",
+        is_archived=False,
     )
 
     db.add(item)
@@ -872,6 +907,9 @@ def receive_order_into_inventory(db: Session, order: models.Order):
 
         order.item_type_id = item_type.id
         item.item_type_id = item_type.id
+
+    if item.is_archived:
+        item.is_archived = False
 
     if units > 0:
         item.quantity += units

@@ -70,7 +70,7 @@ class ItemCreate(BaseModel):
     shelf_num: str | None = None
     tags: str | None = ""
     last_used_at: datetime | None = None
-
+    is_archived: bool = False
 
 class ItemResponse(BaseModel):
     id: int
@@ -91,6 +91,7 @@ class ItemResponse(BaseModel):
     shelf_num: str | None = None
     tags: str | None = ""
     last_used_at: datetime | None = None
+    is_archived: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -113,6 +114,7 @@ class ItemUpdate(BaseModel):
     shelf_num: str | None = None
     tags: str | None = None
     last_used_at: datetime | None = None
+    is_archived: bool | None = None
 
 
 class ItemTransactionCreate(BaseModel):

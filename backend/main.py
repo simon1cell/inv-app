@@ -507,9 +507,9 @@ def delete_item(item_id: str, db: Session = Depends(get_db), current_user = Depe
     crud.create_audit_log(
         db,
         username = current_user.username,
-        action = "DELETE_ITEM",
+        action = "ARCHIVE_ITEM",
         item_id = item.id,
-        details = f"Deleted item {item.item_name}",
+        details = f"Archived item {item.item_name}",
     )
 
     return item
