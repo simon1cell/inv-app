@@ -14,14 +14,11 @@ export default function Sidebar({
   return (
     <aside className="sidebar">
       <div className="brand">
-        <div className="mark" />
-
-        <div>
-          <div className="name">
-            1Cell<span className="ai">.Ai</span>
-          </div>
-          <div className="tag">AI-Powered Precision Oncology</div>
-        </div>
+        <img
+          src="/icons/1CellAi-logo.svg"
+          alt="1Cell.Ai"
+          className="brand-logo"
+        />
       </div>
 
       <div className="nav-label">MENU</div>
@@ -29,7 +26,9 @@ export default function Sidebar({
       <nav className="nav">
         <button
           type="button"
-          className={view === "inventory" ? "active" : ""}
+          className={
+            view === "inventory" || view === "edit-item-type" ? "active" : ""
+          }
           onClick={() => onViewChange("inventory")}
         >
           <span className="nav-icon">⬡</span>

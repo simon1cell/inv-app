@@ -1045,14 +1045,11 @@ export default function Home() {
           }}
         >
           <div className="brand">
-            <div className="mark" />
-
-            <div>
-              <div className="name">
-                1Cell<span className="ai">.Ai</span>
-              </div>
-              <div className="tag">AI-Powered Precision Oncology</div>
-            </div>
+            <img
+              src="/icons/1CellAi-logo.svg"
+              alt="1Cell.Ai"
+              className="brand-logo login-brand-logo"
+            />
           </div>
 
           <h1>Inventory Tracking</h1>

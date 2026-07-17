@@ -1586,3 +1586,25 @@ tbody tr:last-child td {
   padding: 8px 10px;
   font: inherit;
 }
+
+.brand-logo {
+  width: 150px;
+  height: auto;
+  display: block;
+  object-fit: contain;
+}
+
+.login-brand-logo {
+  width: 170px;
+}
+
+.brand-logo {
+  width: 150px;
+  height: auto;
+  display: block;
+  object-fit: contain;
+}
+
+.login-brand-logo {
+  width: 170px;
+}
