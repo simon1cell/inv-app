@@ -4,7 +4,7 @@ A full-stack laboratory inventory tracking and order management system built wit
 
 ---
 
-## 🏗️ Architecture Overview
+## <img src="https://unpkg.com/ionicons@5.5.2/dist/svg/git-network-outline.svg" width="20" height="20" /> Architecture Overview
 
 The project uses a decoupled Client-Server architecture. The frontend is a single-page style Next.js application that communicates entirely via JSON APIs with a FastAPI server.
 
@@ -20,7 +20,7 @@ graph TD
 
 ---
 
-## ⚙️ Backend (FastAPI)
+## <img src="https://unpkg.com/ionicons@5.5.2/dist/svg/cog-outline.svg" width="20" height="20" /> Backend (FastAPI)
 
 The backend is built using **Python 3** and **FastAPI** (`backend/main.py`), optimized for high-performance and asynchronous task handling.
 
@@ -31,7 +31,7 @@ The backend is built using **Python 3** and **FastAPI** (`backend/main.py`), opt
 
 ---
 
-## 🗄️ Database Connection
+## <img src="https://unpkg.com/ionicons@5.5.2/dist/svg/server-outline.svg" width="20" height="20" /> Database Connection
 
 The database configuration is managed dynamically in `backend/database.py`.
 
@@ -53,7 +53,7 @@ models.Base.metadata.create_all(bind=engine)
 
 ---
 
-## 💻 Frontend (Next.js & TypeScript)
+## <img src="https://unpkg.com/ionicons@5.5.2/dist/svg/desktop-outline.svg" width="20" height="20" /> Frontend (Next.js & TypeScript)
 
 The frontend is a modern Next.js project designed with responsive styling and robust type definitions.
 
@@ -65,7 +65,7 @@ The frontend is a modern Next.js project designed with responsive styling and ro
 
 ---
 
-## 🔌 Frontend-Backend Connection
+## <img src="https://unpkg.com/ionicons@5.5.2/dist/svg/link-outline.svg" width="20" height="20" /> Frontend-Backend Connection
 
 The bridge between the client and server is defined in `frontend/lib/api.ts`.
 
@@ -87,7 +87,7 @@ const API_BASE_URL = (
 
 ---
 
-## 🚀 Running the Application Locally
+## <img src="https://unpkg.com/ionicons@5.5.2/dist/svg/rocket-outline.svg" width="20" height="20" /> Running the Application Locally
 
 ### Prerequisite
 Ensure you have **Python 3.10+** and **Node.js 18+** installed.
