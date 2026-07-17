@@ -6,6 +6,7 @@ import AddItemForm from "@/components/AddItemForm";
 import AddOrderForm from "@/components/AddOrderForm";
 import AuditLogTable from "@/components/AuditLogTable";
 import InventoryTable from "@/components/InventoryTable";
+import ItemTypeForm from "@/components/ItemTypeForm";
 import OrdersPage from "@/components/OrdersPage";
 import Sidebar from "@/components/Sidebar";
 import StatCard from "@/components/StatCard";
@@ -145,6 +146,7 @@ function withTimeout<T>(promise: Promise<T>, ms = 5000): Promise<T> {
 export default function Home() {
   const [view, setView] = useState<View>("inventory");
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
+  const [editingItemType, setEditingItemType] = useState<ItemType | null>(null);
   const [orderSeedItem, setOrderSeedItem] = useState<InventoryItem | null>(null);
 
   const [token, setToken] = useState("");
@@ -389,49 +391,31 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function handleEditItemType(item: ItemType) {
+  function handleEditItemType(item: ItemType) {
     if (!isAdmin) return;
 
-    const name = window.prompt("Item type name", item.name);
+    setEditingItemType(item);
+    setView("edit-item-type");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
-    if (name === null) return;
-
-    const category = window.prompt("Category", item.category ?? "");
-
-    if (category === null) return;
-
-    const reorderThreshold = window.prompt(
-      "Reorder threshold",
-      String(item.reorderThreshold),
-    );
-
-    if (reorderThreshold === null) return;
-
-    const criticalThreshold = window.prompt(
-      "Critical threshold",
-      String(item.criticalThreshold),
-    );
-
-    if (criticalThreshold === null) return;
-
-    const notes = window.prompt("Notes", item.notes ?? "");
-
-    if (notes === null) return;
+  async function handleUpdateItemType(payload: {
+    name: string;
+    category?: string | null;
+    reorder_threshold?: number;
+    critical_threshold?: number;
+  }) {
+    if (!editingItemType) return;
 
     setError("");
 
     try {
-      await updateItemType(token, item.id, {
-        name: name.trim() || item.name,
-        category: category.trim() || null,
-        reorder_threshold: Number(reorderThreshold || item.reorderThreshold),
-        critical_threshold: Number(criticalThreshold || item.criticalThreshold),
-        notes: notes.trim() || null,
-      });
-
+      await updateItemType(token, editingItemType.id, payload);
       await refreshInventory();
 
       showToast("Item type updated");
+      setEditingItemType(null);
+      setView("inventory");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update item type");
     }
@@ -702,6 +686,7 @@ export default function Home() {
     setCommentTarget(null);
     setShowCommentOverview(false);
     setEditingItem(null);
+    setEditingItemType(null);
     setOrderSeedItem(null);
     setView("inventory");
     setError("");
@@ -716,6 +701,10 @@ export default function Home() {
     setView(nextView);
     setShowCommentOverview(false);
     setCommentTarget(null);
+
+    if (nextView !== "edit-item-type") {
+      setEditingItemType(null);
+    }
 
     if (nextView === "audit") {
       void refreshAuditLogs();
@@ -1041,8 +1030,8 @@ export default function Home() {
         )}
 
         {showCommentOverview && (
-          <section className="view active">
-            <div className="card">
+          <div className="modal-backdrop">
+            <section className="comment-modal card">
               <div className="card-head">
                 <div>
                   <h2>Unread Comment Center</h2>
@@ -1097,13 +1086,13 @@ export default function Home() {
                   ))}
                 </div>
               </div>
-            </div>
-          </section>
+            </section>
+          </div>
         )}
 
         {commentTarget && (
-          <section className="view active">
-            <div className="card">
+          <div className="modal-backdrop">
+            <section className="comment-modal card">
               <div className="card-head">
                 <div>
                   <h2>{commentTarget.title}</h2>
@@ -1195,8 +1184,8 @@ export default function Home() {
                   </tbody>
                 </table>
               </div>
-            </div>
-          </section>
+            </section>
+          </div>
         )}
 
         {view === "inventory" && (
@@ -1294,6 +1283,17 @@ export default function Home() {
         )}
 
         {isAdmin && view === "audit" && <AuditLogTable logs={auditLogs} />}
+
+        {isAdmin && view === "edit-item-type" && editingItemType && (
+          <ItemTypeForm
+            itemType={editingItemType}
+            onBack={() => {
+              setEditingItemType(null);
+              setView("inventory");
+            }}
+            onSubmitItemType={handleUpdateItemType}
+          />
+        )}
 
         {isAdmin && view === "add-item" && (
           <AddItemForm

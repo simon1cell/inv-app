@@ -4,6 +4,7 @@ export type View =
   | "orders"
   | "add-item"
   | "edit-item"
+  | "edit-item-type"
   | "add-order"
   | "audit"
   | "users";

@@ -133,7 +133,6 @@ export default function InventoryTable({
               <th>Total Qty</th>
               <th>Status</th>
               <th>Comments</th>
-              <th>Notes</th>
               {isAdmin && <th />}
             </tr>
           </thead>
@@ -174,8 +173,6 @@ export default function InventoryTable({
                     </button>
                   </td>
 
-                  <td>{item.notes ?? "—"}</td>
-
                   {isAdmin && (
                     <td>
                       <div className="row-actions">
@@ -205,7 +202,7 @@ export default function InventoryTable({
 
             {visibleItems.length === 0 && (
               <tr>
-                <td colSpan={isAdmin ? 9 : 8} className="empty-row">
+                <td colSpan={isAdmin ? 8 : 7} className="empty-row">
                   No inventory item types found.
                 </td>
               </tr>
