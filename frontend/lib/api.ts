@@ -219,6 +219,10 @@ type OrderPayload = {
   cc_invoice?: string | null;
 };
 
+type OrderUpdatePayload = Partial<OrderPayload> & {
+  item_name?: string;
+};
+
 type ItemTypePayload = {
   name: string;
   category?: string | null;
@@ -634,6 +638,27 @@ export async function createOrderRecord(token: string, payload: OrderPayload) {
   });
 
   return mapOrder(order);
+}
+
+export async function updateOrderRecord(
+  token: string,
+  orderId: number,
+  payload: OrderUpdatePayload,
+) {
+  const order = await apiRequest<BackendOrder>(`/orders/${orderId}`, {
+    token,
+    method: "PUT",
+    json: payload,
+  });
+
+  return mapOrder(order);
+}
+
+export function deleteOrderRecord(token: string, orderId: number) {
+  return apiRequest<{ message: string }>(`/orders/${orderId}`, {
+    token,
+    method: "DELETE",
+  });
 }
 
 export async function importOrdersExcel(token: string, file: File) {

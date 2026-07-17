@@ -10,6 +10,30 @@ import type {
 
 type OrderView = "active" | "log" | "all";
 
+type OrderUpdatePayload = {
+  item_type_id?: number | null;
+  order_date?: string | null;
+  order_placed_by?: string | null;
+  po_number?: string | null;
+  vendor?: string | null;
+  category?: string | null;
+  catalog_no?: string | null;
+  item_name?: string;
+  units_ordered?: number | null;
+  price_per_unit?: number | null;
+  total_price?: number | null;
+  final_price?: number | null;
+  availability?: string | null;
+  expected_delivery_date?: string | null;
+  order_number?: string | null;
+  delivery_date?: string | null;
+  status?: string;
+  received_by?: string | null;
+  date_paid?: string | null;
+  amount_paid?: number | null;
+  cc_invoice?: string | null;
+};
+
 type OrdersPageProps = {
   orders: OrderRecord[];
   inventoryItems: InventoryItem[];
@@ -30,6 +54,8 @@ type OrdersPageProps = {
   onDeleteDocument: (documentId: number) => Promise<void>;
   onMarkDelivered: (orderId: number) => Promise<void>;
   onMarkPaid: (orderId: number) => Promise<void>;
+  onUpdateOrder: (orderId: number, payload: OrderUpdatePayload) => Promise<void>;
+  onDeleteOrder: (orderId: number) => Promise<void>;
 };
 
 function money(value: number | null) {
@@ -41,9 +67,38 @@ function text(value: string | number | null | undefined) {
   return value === null || value === undefined || value === "" ? "—" : value;
 }
 
+function dateValue(value: string | null | undefined) {
+  if (!value) return "";
+  return value.slice(0, 10);
+}
+
+function numberValue(value: number | null | undefined) {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function nullableNumber(value: string) {
+  if (!value.trim()) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function nullableText(value: string) {
+  const clean = value.trim();
+  return clean ? clean : null;
+}
+
 function isDeliveredOrder(order: OrderRecord) {
   const status = (order.status || "").toLowerCase();
   return Boolean(order.deliveryDate) || status === "delivered";
+}
+
+function isPaidOrder(order: OrderRecord) {
+  const status = (order.status || "").toLowerCase();
+  return Boolean(order.datePaid) || status === "paid";
+}
+
+function isLockedOrder(order: OrderRecord) {
+  return isDeliveredOrder(order) || isPaidOrder(order);
 }
 
 export default function OrdersPage({
@@ -59,6 +114,8 @@ export default function OrdersPage({
   onUploadDocument,
   onMarkDelivered,
   onMarkPaid,
+  onUpdateOrder,
+  onDeleteOrder,
   onGetDocuments,
   onDownloadDocument,
   onDeleteDocument,
@@ -67,7 +124,6 @@ export default function OrdersPage({
   const [search, setSearch] = useState("");
   const [orderView, setOrderView] = useState<OrderView>("active");
   const [importing, setImporting] = useState(false);
-  const [aiImporting, setAiImporting] = useState(false);
   const [busyOrderId, setBusyOrderId] = useState<number | null>(null);
   const [tableScrollWidth, setTableScrollWidth] = useState(0);
 
@@ -76,8 +132,36 @@ export default function OrdersPage({
     documentType: OrderDocumentType;
   } | null>(null);
 
+  const [documentModalOrderId, setDocumentModalOrderId] = useState<number | null>(
+    null,
+  );
+  const [documents, setDocuments] = useState<OrderDocument[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [documentsError, setDocumentsError] = useState("");
+  const [deletingDocumentId, setDeletingDocumentId] = useState<number | null>(
+    null,
+  );
+
+  const [editingOrder, setEditingOrder] = useState<OrderRecord | null>(null);
+  const [editForm, setEditForm] = useState({
+    orderDate: "",
+    orderPlacedBy: "",
+    poNumber: "",
+    vendor: "",
+    category: "",
+    catalogNo: "",
+    itemName: "",
+    unitsOrdered: "",
+    pricePerUnit: "",
+    totalPrice: "",
+    finalPrice: "",
+    availability: "",
+    expectedDeliveryDate: "",
+    orderNumber: "",
+    status: "Ordered",
+  });
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const aiFileInputRef = useRef<HTMLInputElement | null>(null);
   const documentInputRef = useRef<HTMLInputElement | null>(null);
   const topScrollRef = useRef<HTMLDivElement | null>(null);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
@@ -100,6 +184,10 @@ export default function OrdersPage({
       )
       .slice(0, 10);
   }, [activeOrderCatalogs, inventoryItems]);
+
+  const pendingDeliveryOrders = useMemo(() => {
+    return orders.filter((order) => !isDeliveredOrder(order));
+  }, [orders]);
 
   const visibleOrders = useMemo(() => {
     const query = search.toLowerCase();
@@ -126,15 +214,6 @@ export default function OrdersPage({
       );
   }, [orders, orderView, search]);
 
-  const [documentModalOrderId, setDocumentModalOrderId] = useState<number | null>(
-  null,
-  );
-  const [documents, setDocuments] = useState<OrderDocument[]>([]);
-  const [documentsLoading, setDocumentsLoading] = useState(false);
-  const [documentsError, setDocumentsError] = useState("");
-  const [deletingDocumentId, setDeletingDocumentId] = useState<number | null>(
-    null,
-  );
   const activeCount = orders.filter((order) => !isDeliveredOrder(order)).length;
   const logCount = orders.filter(isDeliveredOrder).length;
 
@@ -166,51 +245,7 @@ export default function OrdersPage({
     if (!topScrollRef.current || !tableScrollRef.current) return;
     topScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
   }
-  async function openDocumentsModal(orderId: number) {
-  setDocumentModalOrderId(orderId);
-  setDocuments([]);
-  setDocumentsError("");
-  setDocumentsLoading(true);
 
-  try {
-    const docs = await onGetDocuments(orderId);
-    setDocuments(docs);
-  } catch (err) {
-    setDocumentsError(
-      err instanceof Error ? err.message : "Failed to load documents",
-    );
-  } finally {
-    setDocumentsLoading(false);
-  }
-}
-
-  function closeDocumentsModal() {
-    setDocumentModalOrderId(null);
-    setDocuments([]);
-    setDocumentsError("");
-  }
-
-  async function handleDownloadDocument(document: OrderDocument) {
-    await onDownloadDocument(
-      document.id,
-      document.originalFilename ?? `order-document-${document.id}`,
-    );
-  }
-
-  async function handleDeleteDocument(documentId: number) {
-    if (!window.confirm("Delete this document from the server?")) return;
-
-    setDeletingDocumentId(documentId);
-
-    try {
-      await onDeleteDocument(documentId);
-      setDocuments((current) =>
-        current.filter((document) => document.id !== documentId),
-      );
-    } finally {
-      setDeletingDocumentId(null);
-    }
-  }
   function toggleOrder(id: number) {
     setSelectedIds((current) =>
       current.includes(id)
@@ -284,6 +319,52 @@ export default function OrdersPage({
     }
   }
 
+  async function openDocumentsModal(orderId: number) {
+    setDocumentModalOrderId(orderId);
+    setDocuments([]);
+    setDocumentsError("");
+    setDocumentsLoading(true);
+
+    try {
+      const docs = await onGetDocuments(orderId);
+      setDocuments(docs);
+    } catch (err) {
+      setDocumentsError(
+        err instanceof Error ? err.message : "Failed to load documents",
+      );
+    } finally {
+      setDocumentsLoading(false);
+    }
+  }
+
+  function closeDocumentsModal() {
+    setDocumentModalOrderId(null);
+    setDocuments([]);
+    setDocumentsError("");
+  }
+
+  async function handleDownloadDocument(document: OrderDocument) {
+    await onDownloadDocument(
+      document.id,
+      document.originalFilename ?? `order-document-${document.id}`,
+    );
+  }
+
+  async function handleDeleteDocument(documentId: number) {
+    if (!window.confirm("Delete this document from the server?")) return;
+
+    setDeletingDocumentId(documentId);
+
+    try {
+      await onDeleteDocument(documentId);
+      setDocuments((current) =>
+        current.filter((document) => document.id !== documentId),
+      );
+    } finally {
+      setDeletingDocumentId(null);
+    }
+  }
+
   async function handleMarkDelivered(orderId: number) {
     setBusyOrderId(orderId);
 
@@ -304,9 +385,225 @@ export default function OrdersPage({
     }
   }
 
+  function openEditOrder(order: OrderRecord) {
+    if (isLockedOrder(order)) return;
+
+    setEditingOrder(order);
+    setEditForm({
+      orderDate: dateValue(order.orderDate),
+      orderPlacedBy: order.orderPlacedBy ?? "",
+      poNumber: order.poNumber ?? "",
+      vendor: order.vendor ?? "",
+      category: order.category ?? "",
+      catalogNo: order.catalogNo ?? "",
+      itemName: order.itemName,
+      unitsOrdered: numberValue(order.unitsOrdered),
+      pricePerUnit: numberValue(order.pricePerUnit),
+      totalPrice: numberValue(order.totalPrice),
+      finalPrice: numberValue(order.finalPrice),
+      availability: order.availability ?? "",
+      expectedDeliveryDate: dateValue(order.expectedDeliveryDate),
+      orderNumber: order.orderNumber ?? "",
+      status: order.status || "Ordered",
+    });
+  }
+
+  async function handleSaveEditedOrder() {
+    if (!editingOrder) return;
+
+    setBusyOrderId(editingOrder.id);
+
+    try {
+      await onUpdateOrder(editingOrder.id, {
+        order_date: editForm.orderDate || null,
+        order_placed_by: nullableText(editForm.orderPlacedBy),
+        po_number: nullableText(editForm.poNumber),
+        vendor: nullableText(editForm.vendor),
+        category: nullableText(editForm.category),
+        catalog_no: nullableText(editForm.catalogNo),
+        item_name: editForm.itemName.trim(),
+        units_ordered: nullableNumber(editForm.unitsOrdered),
+        price_per_unit: nullableNumber(editForm.pricePerUnit),
+        total_price: nullableNumber(editForm.totalPrice),
+        final_price: nullableNumber(editForm.finalPrice),
+        availability: nullableText(editForm.availability),
+        expected_delivery_date: editForm.expectedDeliveryDate || null,
+        order_number: nullableText(editForm.orderNumber),
+        status: editForm.status || "Ordered",
+      });
+
+      setEditingOrder(null);
+    } finally {
+      setBusyOrderId(null);
+    }
+  }
+
+  async function handleDeleteOrder(order: OrderRecord) {
+    if (isLockedOrder(order)) return;
+
+    const confirmed = window.confirm(
+      `Delete order #${order.id} for ${order.itemName}? This will also archive the pending placeholder stock item if one was created.`,
+    );
+
+    if (!confirmed) return;
+
+    setBusyOrderId(order.id);
+
+    try {
+      await onDeleteOrder(order.id);
+      setSelectedIds((current) => current.filter((id) => id !== order.id));
+    } finally {
+      setBusyOrderId(null);
+    }
+  }
+
+  function renderOrderActions(order: OrderRecord) {
+    const locked = isLockedOrder(order);
+
+    return (
+      <div className="order-row-actions">
+        <button
+          type="button"
+          className="mini-btn"
+          disabled={busyOrderId === order.id}
+          onClick={() => openDocumentPicker(order.id, "confirmation")}
+        >
+          Confirmation
+        </button>
+
+        <button
+          type="button"
+          className="mini-btn"
+          onClick={() => void openDocumentsModal(order.id)}
+        >
+          View Docs
+        </button>
+
+        <button
+          type="button"
+          className="mini-btn"
+          disabled={busyOrderId === order.id}
+          onClick={() => openDocumentPicker(order.id, "invoice")}
+        >
+          Invoice
+        </button>
+
+        <button
+          type="button"
+          className="mini-btn"
+          disabled={busyOrderId === order.id}
+          onClick={() => openDocumentPicker(order.id, "delivery")}
+        >
+          Delivery Doc
+        </button>
+
+        <button
+          type="button"
+          className="mini-btn good"
+          disabled={busyOrderId === order.id || isDeliveredOrder(order)}
+          onClick={() => void handleMarkDelivered(order.id)}
+        >
+          Delivered
+        </button>
+
+        <button
+          type="button"
+          className="mini-btn paid"
+          disabled={busyOrderId === order.id || isPaidOrder(order)}
+          onClick={() => void handleMarkPaid(order.id)}
+        >
+          Paid
+        </button>
+
+        {!locked && (
+          <>
+            <button
+              type="button"
+              className="mini-btn"
+              disabled={busyOrderId === order.id}
+              onClick={() => openEditOrder(order)}
+            >
+              Edit
+            </button>
+
+            <button
+              type="button"
+              className="mini-btn danger"
+              disabled={busyOrderId === order.id}
+              onClick={() => void handleDeleteOrder(order)}
+            >
+              Delete
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
+
   return (
     <section className="view active">
       <p className="section-tag">ORDERS</p>
+
+      {pendingDeliveryOrders.length > 0 && (
+        <div className="card order-suggestions">
+          <div className="card-head">
+            <div>
+              <h2>Pending Orders / Need Delivery</h2>
+              <p className="sub">
+                {pendingDeliveryOrders.length} orders still need to be delivered
+              </p>
+            </div>
+          </div>
+
+          <div className="suggestion-list">
+            {pendingDeliveryOrders.slice(0, 12).map((order) => (
+              <div key={order.id} className="suggestion-row">
+                <div>
+                  <strong>{order.itemName}</strong>
+                  <p className="sub">
+                    {text(order.vendor)} · {text(order.catalogNo)} · Qty{" "}
+                    {text(order.unitsOrdered)} · Expected{" "}
+                    {text(order.expectedDeliveryDate)}
+                  </p>
+                </div>
+
+                <div className="order-row-actions">
+                  <button
+                    type="button"
+                    className="mini-btn good"
+                    disabled={busyOrderId === order.id}
+                    onClick={() => void handleMarkDelivered(order.id)}
+                  >
+                    Mark Delivered
+                  </button>
+
+                  {!isLockedOrder(order) && (
+                    <>
+                      <button
+                        type="button"
+                        className="mini-btn"
+                        disabled={busyOrderId === order.id}
+                        onClick={() => openEditOrder(order)}
+                      >
+                        Edit
+                      </button>
+
+                      <button
+                        type="button"
+                        className="mini-btn danger"
+                        disabled={busyOrderId === order.id}
+                        onClick={() => void handleDeleteOrder(order)}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {suggestedItems.length > 0 && (
         <div className="card order-suggestions">
@@ -383,15 +680,6 @@ export default function OrdersPage({
               disabled={importing}
             >
               {importing ? "Importing..." : "Import Excel"}
-            </button>
-
-            <button
-              type="button"
-              className="btn tertiary"
-              onClick={() => aiFileInputRef.current?.click()}
-              disabled={aiImporting}
-            >
-              {aiImporting ? "AI Importing..." : "AI Clean Import"}
             </button>
 
             <button
@@ -538,62 +826,7 @@ export default function OrdersPage({
                   <td>{money(order.amountPaid)}</td>
                   <td>{text(order.ccInvoice)}</td>
 
-                  <td>
-                    <div className="order-row-actions">
-                      <button
-                        type="button"
-                        className="mini-btn"
-                        disabled={busyOrderId === order.id}
-                        onClick={() =>
-                          openDocumentPicker(order.id, "confirmation")
-                        }
-                      >
-                        Confirmation
-                      </button>
-                      <button
-                        type="button"
-                        className="mini-btn"
-                        onClick={() => void openDocumentsModal(order.id)}
-                      >
-                        View Docs
-                      </button>
-                      <button
-                        type="button"
-                        className="mini-btn"
-                        disabled={busyOrderId === order.id}
-                        onClick={() => openDocumentPicker(order.id, "invoice")}
-                      >
-                        Invoice
-                      </button>
-
-                      <button
-                        type="button"
-                        className="mini-btn"
-                        disabled={busyOrderId === order.id}
-                        onClick={() => openDocumentPicker(order.id, "delivery")}
-                      >
-                        Delivery Doc
-                      </button>
-
-                      <button
-                        type="button"
-                        className="mini-btn good"
-                        disabled={busyOrderId === order.id}
-                        onClick={() => void handleMarkDelivered(order.id)}
-                      >
-                        Delivered
-                      </button>
-
-                      <button
-                        type="button"
-                        className="mini-btn paid"
-                        disabled={busyOrderId === order.id}
-                        onClick={() => void handleMarkPaid(order.id)}
-                      >
-                        Paid
-                      </button>
-                    </div>
-                  </td>
+                  <td>{renderOrderActions(order)}</td>
                 </tr>
               ))}
 
@@ -608,6 +841,257 @@ export default function OrdersPage({
           </table>
         </div>
       </div>
+
+      {editingOrder && (
+        <div className="modal-backdrop" onClick={() => setEditingOrder(null)}>
+          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h2>Edit Order</h2>
+                <p className="sub">
+                  Order #{editingOrder.id}. Editing is only allowed before
+                  delivery and payment.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => setEditingOrder(null)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="form-grid">
+              <label>
+                Date
+                <input
+                  type="date"
+                  value={editForm.orderDate}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      orderDate: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <label>
+                Order Placed By
+                <input
+                  value={editForm.orderPlacedBy}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      orderPlacedBy: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <label>
+                PO Number
+                <input
+                  value={editForm.poNumber}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      poNumber: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <label>
+                Vendor
+                <input
+                  value={editForm.vendor}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      vendor: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <label>
+                Category
+                <input
+                  value={editForm.category}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      category: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <label>
+                Catalog No.
+                <input
+                  value={editForm.catalogNo}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      catalogNo: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <label>
+                Item Name
+                <input
+                  value={editForm.itemName}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      itemName: event.target.value,
+                    }))
+                  }
+                  required
+                />
+              </label>
+
+              <label>
+                # Units
+                <input
+                  type="number"
+                  value={editForm.unitsOrdered}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      unitsOrdered: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <label>
+                Price / Unit
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editForm.pricePerUnit}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      pricePerUnit: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <label>
+                Total Price
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editForm.totalPrice}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      totalPrice: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <label>
+                Final Price
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editForm.finalPrice}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      finalPrice: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <label>
+                Availability
+                <input
+                  value={editForm.availability}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      availability: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <label>
+                Expected Delivery
+                <input
+                  type="date"
+                  value={editForm.expectedDeliveryDate}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      expectedDeliveryDate: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <label>
+                Order #
+                <input
+                  value={editForm.orderNumber}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      orderNumber: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <label>
+                Status
+                <input
+                  value={editForm.status}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      status: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            </div>
+
+            <div className="form-actions">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setEditingOrder(null)}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                className="btn primary"
+                disabled={busyOrderId === editingOrder.id}
+                onClick={() => void handleSaveEditedOrder()}
+              >
+                {busyOrderId === editingOrder.id ? "Saving..." : "Save Order"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {documentModalOrderId !== null && (
         <div className="modal-backdrop" onClick={closeDocumentsModal}>
           <div className="modal-card" onClick={(event) => event.stopPropagation()}>

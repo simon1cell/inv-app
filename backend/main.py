@@ -782,6 +782,72 @@ def create_order(
     return created_order
 
 
+@app.put("/orders/{order_id}", response_model=schemas.OrderResponse)
+def update_order(
+    order_id: int,
+    payload: schemas.OrderUpdate,
+    db: Session = Depends(get_db),
+    current_user=Depends(auth.require_role("admin")),
+):
+    order = crud.update_order(
+        db,
+        order_id,
+        payload,
+        username=current_user.username,
+    )
+
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if order == "locked":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot edit an order after delivery or payment",
+        )
+
+    if order == "invalid":
+        raise HTTPException(status_code=400, detail="Item name is required")
+
+    crud.create_audit_log(
+        db,
+        username=current_user.username,
+        action="UPDATE_ORDER",
+        item_id=None,
+        details=f"Updated order #{order.id}: {order.item_name}",
+    )
+
+    return order
+
+
+@app.delete("/orders/{order_id}")
+def delete_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(auth.require_role("admin")),
+):
+    result = crud.delete_order(db, order_id, username=current_user.username)
+
+    if result is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if result == "locked":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete an order after delivery or payment",
+        )
+
+    crud.create_audit_log(
+        db,
+        username=current_user.username,
+        action="DELETE_ORDER",
+        item_id=None,
+        details=f"Deleted order #{order_id}",
+    )
+
+    return {"message": "Order deleted"}
+
+
+
 @app.post("/orders/import", response_model=list[schemas.OrderResponse])
 async def import_orders(
     file: UploadFile = File(...),

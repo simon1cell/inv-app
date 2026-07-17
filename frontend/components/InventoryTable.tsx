@@ -15,11 +15,10 @@ type InventoryTableProps = {
   onViewComments: (item: ItemType) => void;
 };
 
-type FilterValue = Status | "everything";
+type FilterValue = Extract<Status, "low" | "critical" | "out">;
 type InventorySort = "name" | "quantity-low" | "quantity-high";
 
 const FILTERS: Array<{ label: string; value: FilterValue }> = [
-  { label: "Everything", value: "everything" },
   { label: "Low", value: "low" },
   { label: "Critical", value: "critical" },
   { label: "Out of Stock", value: "out" },
@@ -34,22 +33,30 @@ export default function InventoryTable({
   onDeleteItem,
   onViewComments,
 }: InventoryTableProps) {
-  const [filter, setFilter] = useState<FilterValue>("everything");
+  const [filters, setFilters] = useState<FilterValue[]>([]);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<InventorySort>("name");
+
+  function toggleFilter(value: FilterValue) {
+    setFilters((current) =>
+      current.includes(value)
+        ? current.filter((entry) => entry !== value)
+        : [...current, value],
+    );
+  }
 
   const visibleItems = useMemo(() => {
     const query = search.trim().toLowerCase();
 
     return [...items]
       .filter((item) => {
-        const matchesFilter = filter === "everything" || item.status === filter;
+        const matchesFilter =
+          filters.length === 0 || filters.includes(item.status as FilterValue);
 
         const searchText = [
           item.name,
           item.category,
           item.brand,
-          item.notes,
           item.totalQuantity,
         ]
           .filter((value) => value !== null && value !== undefined)
@@ -59,17 +66,11 @@ export default function InventoryTable({
         return matchesFilter && searchText.includes(query);
       })
       .sort((a, b) => {
-        if (sort === "quantity-low") {
-          return a.totalQuantity - b.totalQuantity;
-        }
-
-        if (sort === "quantity-high") {
-          return b.totalQuantity - a.totalQuantity;
-        }
-
+        if (sort === "quantity-low") return a.totalQuantity - b.totalQuantity;
+        if (sort === "quantity-high") return b.totalQuantity - a.totalQuantity;
         return a.name.localeCompare(b.name);
       });
-  }, [filter, items, search, sort]);
+  }, [filters, items, search, sort]);
 
   return (
     <div className="card">
@@ -90,12 +91,20 @@ export default function InventoryTable({
 
       <div className="toolbar">
         <div className="filters">
+          <button
+            type="button"
+            className={filters.length === 0 ? "chip active" : "chip"}
+            onClick={() => setFilters([])}
+          >
+            Everything
+          </button>
+
           {FILTERS.map((option) => (
             <button
               key={option.value}
               type="button"
-              className={filter === option.value ? "chip active" : "chip"}
-              onClick={() => setFilter(option.value)}
+              className={filters.includes(option.value) ? "chip active" : "chip"}
+              onClick={() => toggleFilter(option.value)}
             >
               {option.label}
             </button>
@@ -166,7 +175,11 @@ export default function InventoryTable({
                   <td>
                     <button
                       type="button"
-                      className={commentCount > 0 ? "comment-chip has-comments" : "comment-chip"}
+                      className={
+                        commentCount > 0
+                          ? "comment-chip has-comments"
+                          : "comment-chip"
+                      }
                       onClick={() => onViewComments(item)}
                     >
                       💬 {commentCount}

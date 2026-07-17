@@ -18,11 +18,13 @@ import {
   createItem,
   createItemComment,
   createOrderRecord,
+  createTransaction,
   createUser,
   deleteItem,
   deleteItemComment,
   deleteItemType,
   deleteOrderDocument,
+  deleteOrderRecord,
   deleteUser,
   downloadOrderDocument,
   exportOrdersExcel,
@@ -44,6 +46,7 @@ import {
   uploadOrderDocument,
   updateItem,
   updateItemType,
+  updateOrderRecord,
   type CurrentUser,
 } from "@/lib/api";
 
@@ -454,6 +457,34 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  async function handleUseStockItem(itemId: string, amount: number) {
+    setError("");
+
+    try {
+      await createTransaction(token, itemId, -amount);
+      await refreshInventory();
+
+      showToast(`Used ${amount}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to use stock item");
+    }
+  }
+
+  async function handleRestockStockItem(itemId: string, amount: number) {
+    if (!isAdmin) return;
+
+    setError("");
+
+    try {
+      await createTransaction(token, itemId, amount);
+      await refreshInventory();
+
+      showToast(`Restocked ${amount}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to restock stock item");
+    }
+  }
+
   async function handleDeleteStockItem(itemId: string) {
     if (!isAdmin) return;
 
@@ -788,6 +819,60 @@ export default function Home() {
       setView("orders");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add order");
+    }
+  }
+
+
+  async function handleUpdateOrder(
+    orderId: number,
+    payload: {
+      item_type_id?: number | null;
+      order_date?: string | null;
+      order_placed_by?: string | null;
+      po_number?: string | null;
+      vendor?: string | null;
+      category?: string | null;
+      catalog_no?: string | null;
+      item_name?: string;
+      units_ordered?: number | null;
+      price_per_unit?: number | null;
+      total_price?: number | null;
+      final_price?: number | null;
+      availability?: string | null;
+      expected_delivery_date?: string | null;
+      order_number?: string | null;
+      delivery_date?: string | null;
+      status?: string;
+      received_by?: string | null;
+      date_paid?: string | null;
+      amount_paid?: number | null;
+      cc_invoice?: string | null;
+    },
+  ) {
+    setError("");
+
+    try {
+      await updateOrderRecord(token, orderId, payload);
+      await refreshOrders();
+      await refreshInventory();
+
+      showToast("Order updated");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update order");
+    }
+  }
+
+  async function handleDeleteOrder(orderId: number) {
+    setError("");
+
+    try {
+      await deleteOrderRecord(token, orderId);
+      await refreshOrders();
+      await refreshInventory();
+
+      showToast("Order deleted");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete order");
     }
   }
 
@@ -1247,6 +1332,8 @@ export default function Home() {
               onEditItem={handleEditStockItem}
               onDeleteItem={handleDeleteStockItem}
               onViewComments={(item) => void handleViewStockItemComments(item)}
+              onUseItem={handleUseStockItem}
+              onRestockItem={handleRestockStockItem}
             />
           </section>
         )}
@@ -1265,6 +1352,8 @@ export default function Home() {
             onUploadDocument={handleUploadOrderDocument}
             onMarkDelivered={handleMarkOrderDelivered}
             onMarkPaid={handleMarkOrderPaid}
+            onUpdateOrder={handleUpdateOrder}
+            onDeleteOrder={handleDeleteOrder}
             onGetDocuments={handleGetOrderDocuments}
             onDownloadDocument={handleDownloadOrderDocument}
             onDeleteDocument={handleDeleteOrderDocument}

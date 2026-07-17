@@ -794,6 +794,152 @@ def create_order(db: Session, order: schemas.OrderCreate):
 
     return db_order
 
+def order_is_locked_for_edit(order: models.Order):
+    status = (order.status or "").strip().lower()
+
+    return bool(
+        order.delivery_date
+        or order.date_paid
+        or status in {"delivered", "paid"}
+    )
+
+
+def item_is_pending_order_placeholder(item: models.Item):
+    tags = {
+        tag.strip().lower()
+        for tag in (item.tags or "").split(",")
+        if tag.strip()
+    }
+
+    return (
+        item.quantity == 0
+        and item.storage_id == "Pending Order"
+        and "pending" in tags
+        and "order" in tags
+    )
+
+
+def archive_pending_order_placeholder(db: Session, catalogue_num: str | None):
+    if not catalogue_num:
+        return
+
+    item = get_item_by_catalogue_num(db, str(catalogue_num).strip())
+
+    if item is None:
+        return
+
+    if not item_is_pending_order_placeholder(item):
+        return
+
+    tags = {
+        tag.strip()
+        for tag in (item.tags or "").split(",")
+        if tag.strip()
+    }
+
+    tags.add("archived")
+    tags.add("cancelled-order")
+
+    item.is_archived = True
+    item.tags = ",".join(sorted(tags))
+    db.commit()
+    db.refresh(item)
+
+
+def sync_pending_order_placeholder(db: Session, order: models.Order):
+    if not order.catalog_no:
+        return None
+
+    item = get_item_by_catalogue_num(db, str(order.catalog_no).strip())
+
+    if item is None:
+        return create_inventory_placeholder_from_order(db, order)
+
+    if not item_is_pending_order_placeholder(item):
+        return item
+
+    item.item_type_id = order.item_type_id
+    item.item_name = order.item_name
+    item.brand = order.vendor or "—"
+    item.category = order.category or "Uncategorized"
+    item.expiry_date = order.expected_delivery_date or order.delivery_date
+    item.last_restocked = order.order_date or date.today()
+
+    db.commit()
+    db.refresh(item)
+
+    return item
+
+
+def update_order(
+    db: Session,
+    order_id: int,
+    payload: schemas.OrderUpdate,
+    username: str | None = None,
+):
+    order = get_order_by_id(db, order_id)
+
+    if order is None:
+        return None
+
+    if order_is_locked_for_edit(order):
+        return "locked"
+
+    old_catalog_no = order.catalog_no
+    update_data = payload.model_dump(exclude_unset=True)
+
+    for key, value in update_data.items():
+        setattr(order, key, value)
+
+    if not order.item_name:
+        return "invalid"
+
+    item_type = resolve_order_item_type(db, order.__dict__)
+
+    if item_type is not None:
+        order.item_type_id = item_type.id
+
+    db.commit()
+    db.refresh(order)
+
+    if old_catalog_no and old_catalog_no != order.catalog_no:
+        archive_pending_order_placeholder(db, old_catalog_no)
+
+    sync_pending_order_placeholder(db, order)
+
+    create_order_event(
+        db,
+        order_id=order.id,
+        event_type="UPDATED",
+        notes="Order details updated before delivery/payment",
+        created_by=username,
+    )
+
+    return order
+
+
+def delete_order(db: Session, order_id: int, username: str | None = None):
+    order = get_order_by_id(db, order_id)
+
+    if order is None:
+        return None
+
+    if order_is_locked_for_edit(order):
+        return "locked"
+
+    catalog_no = order.catalog_no
+
+    db.query(models.OrderEvent).filter(models.OrderEvent.order_id == order_id).delete()
+    db.query(models.OrderDocument).filter(models.OrderDocument.order_id == order_id).delete()
+
+    db.delete(order)
+    db.commit()
+
+    archive_pending_order_placeholder(db, catalog_no)
+
+    return "deleted"
+
+
 def get_item_by_catalogue_num(db: Session, catalogue_num: str):
     return (
         db.query(models.Item)

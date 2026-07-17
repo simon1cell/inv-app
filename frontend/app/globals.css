@@ -1571,3 +1571,18 @@ tbody tr:last-child td {
     padding: 12px;
   }
 }
+
+.stock-action-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 230px;
+}
+
+.stock-action-cell input {
+  width: 62px;
+  border: 1px solid #cfd9e8;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font: inherit;
+}

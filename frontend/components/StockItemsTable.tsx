@@ -19,9 +19,11 @@ type StockItemsTableProps = {
   onEditItem: (item: InventoryItem) => void;
   onDeleteItem: (itemId: string) => void;
   onViewComments: (item: InventoryItem) => void;
+  onUseItem: (itemId: string, amount: number) => Promise<void>;
+  onRestockItem: (itemId: string, amount: number) => Promise<void>;
 };
 
-type FilterValue = Status | "everything";
+type FilterValue = Extract<Status, "low" | "critical" | "out">;
 type StockSort =
   | "name"
   | "quantity-low"
@@ -30,7 +32,6 @@ type StockSort =
   | "storage";
 
 const FILTERS: Array<{ label: string; value: FilterValue }> = [
-  { label: "Everything", value: "everything" },
   { label: "Low", value: "low" },
   { label: "Critical", value: "critical" },
   { label: "Out of Stock", value: "out" },
@@ -45,14 +46,83 @@ export default function StockItemsTable({
   onEditItem,
   onDeleteItem,
   onViewComments,
+  onUseItem,
+  onRestockItem,
 }: StockItemsTableProps) {
-  const [filter, setFilter] = useState<FilterValue>("everything");
+  const [filters, setFilters] = useState<FilterValue[]>([]);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<StockSort>("name");
+  const [amountsByItemId, setAmountsByItemId] = useState<Record<string, string>>(
+    {},
+  );
+  const [busyItemId, setBusyItemId] = useState<string | null>(null);
 
   const itemTypeById = useMemo(() => {
     return new Map(itemTypes.map((itemType) => [itemType.id, itemType]));
   }, [itemTypes]);
+
+  function toggleFilter(value: FilterValue) {
+    setFilters((current) =>
+      current.includes(value)
+        ? current.filter((entry) => entry !== value)
+        : [...current, value],
+    );
+  }
+
+  function amountFor(itemId: string) {
+    return amountsByItemId[itemId] ?? "1";
+  }
+
+  function updateAmount(itemId: string, value: string) {
+    setAmountsByItemId((current) => ({
+      ...current,
+      [itemId]: value,
+    }));
+  }
+
+  function parsedAmount(itemId: string) {
+    const amount = Number(amountFor(itemId));
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return null;
+    }
+
+    return Math.floor(amount);
+  }
+
+  async function handleUse(item: InventoryItem) {
+    const amount = parsedAmount(item.id);
+
+    if (!amount) {
+      window.alert("Enter an amount greater than 0.");
+      return;
+    }
+
+    setBusyItemId(item.id);
+
+    try {
+      await onUseItem(item.id, amount);
+    } finally {
+      setBusyItemId(null);
+    }
+  }
+
+  async function handleRestock(item: InventoryItem) {
+    const amount = parsedAmount(item.id);
+
+    if (!amount) {
+      window.alert("Enter an amount greater than 0.");
+      return;
+    }
+
+    setBusyItemId(item.id);
+
+    try {
+      await onRestockItem(item.id, amount);
+    } finally {
+      setBusyItemId(null);
+    }
+  }
 
   const visibleItems = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -63,7 +133,8 @@ export default function StockItemsTable({
           ? itemTypeById.get(item.itemTypeId)
           : null;
 
-        const matchesFilter = filter === "everything" || item.status === filter;
+        const matchesFilter =
+          filters.length === 0 || filters.includes(item.status as FilterValue);
 
         const searchText = [
           item.itemName,
@@ -89,10 +160,9 @@ export default function StockItemsTable({
         if (sort === "quantity-high") return b.quantity - a.quantity;
         if (sort === "catalog") return a.catalogueNum.localeCompare(b.catalogueNum);
         if (sort === "storage") return a.storageId.localeCompare(b.storageId);
-
         return a.itemName.localeCompare(b.itemName);
       });
-  }, [filter, itemTypeById, items, search, sort]);
+  }, [filters, itemTypeById, items, search, sort]);
 
   return (
     <div className="card">
@@ -113,12 +183,20 @@ export default function StockItemsTable({
 
       <div className="toolbar">
         <div className="filters">
+          <button
+            type="button"
+            className={filters.length === 0 ? "chip active" : "chip"}
+            onClick={() => setFilters([])}
+          >
+            Everything
+          </button>
+
           {FILTERS.map((option) => (
             <button
               key={option.value}
               type="button"
-              className={filter === option.value ? "chip active" : "chip"}
-              onClick={() => setFilter(option.value)}
+              className={filters.includes(option.value) ? "chip active" : "chip"}
+              onClick={() => toggleFilter(option.value)}
             >
               {option.label}
             </button>
@@ -160,6 +238,7 @@ export default function StockItemsTable({
               <th>Storage</th>
               <th>Shelf</th>
               <th>Qty</th>
+              <th>Use / Restock</th>
               <th>Expiry</th>
               <th>Status</th>
               <th>Comments</th>
@@ -174,6 +253,7 @@ export default function StockItemsTable({
                 : null;
 
               const commentCount = commentCountsByItemId[item.id] ?? 0;
+              const busy = busyItemId === item.id;
 
               return (
                 <tr key={item.id}>
@@ -196,6 +276,41 @@ export default function StockItemsTable({
                   <td>{item.storageId}</td>
                   <td>{item.shelfNum}</td>
                   <td className="strong-text">{item.quantity}</td>
+
+                  <td>
+                    <div className="stock-action-cell">
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={amountFor(item.id)}
+                        onChange={(event) =>
+                          updateAmount(item.id, event.target.value)
+                        }
+                      />
+
+                      <button
+                        type="button"
+                        className="mini-btn danger"
+                        disabled={busy || item.quantity <= 0}
+                        onClick={() => void handleUse(item)}
+                      >
+                        Use
+                      </button>
+
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          className="mini-btn good"
+                          disabled={busy}
+                          onClick={() => void handleRestock(item)}
+                        >
+                          Restock
+                        </button>
+                      )}
+                    </div>
+                  </td>
+
                   <td>{item.expiryDate}</td>
 
                   <td>
@@ -205,7 +320,11 @@ export default function StockItemsTable({
                   <td>
                     <button
                       type="button"
-                      className={commentCount > 0 ? "comment-chip has-comments" : "comment-chip"}
+                      className={
+                        commentCount > 0
+                          ? "comment-chip has-comments"
+                          : "comment-chip"
+                      }
                       onClick={() => onViewComments(item)}
                     >
                       💬 {commentCount}
@@ -241,7 +360,7 @@ export default function StockItemsTable({
 
             {visibleItems.length === 0 && (
               <tr>
-                <td colSpan={isAdmin ? 13 : 12} className="empty-row">
+                <td colSpan={isAdmin ? 14 : 13} className="empty-row">
                   No stock items found.
                 </td>
               </tr>

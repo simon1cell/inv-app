@@ -219,6 +219,30 @@ class OrderCreate(OrderBase):
     pass
 
 
+class OrderUpdate(BaseModel):
+    item_type_id: int | None = None
+    order_date: date | None = None
+    order_placed_by: str | None = None
+    po_number: str | None = None
+    vendor: str | None = None
+    category: str | None = None
+    catalog_no: str | None = None
+    item_name: str | None = None
+    units_ordered: int | None = None
+    price_per_unit: float | None = None
+    total_price: float | None = None
+    final_price: float | None = None
+    availability: str | None = None
+    expected_delivery_date: date | None = None
+    order_number: str | None = None
+    delivery_date: date | None = None
+    status: str | None = None
+    received_by: str | None = None
+    date_paid: date | None = None
+    amount_paid: float | None = None
+    cc_invoice: str | None = None
+
+
 class OrderResponse(OrderBase):
     id: int
 
