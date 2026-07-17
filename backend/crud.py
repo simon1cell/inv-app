@@ -625,23 +625,25 @@ def delete_item_type(db: Session, item_type_id: int):
         .count()
     )
 
-    linked_orders_count = (
+    if active_items_count > 0:
+        return "has_active_items"
+
+    linked_orders = (
         db.query(models.Order)
         .filter(models.Order.item_type_id == item_type_id)
-        .count()
-    )
-
-    if active_items_count > 0 or linked_orders_count > 0:
-        return "has_links"
-
-    archived_items = (
-        db.query(models.Item)
-        .filter(models.Item.item_type_id == item_type_id)
-        .filter(models.Item.is_archived == True)
         .all()
     )
 
-    for item in archived_items:
+    for order in linked_orders:
+        order.item_type_id = None
+
+    linked_items = (
+        db.query(models.Item)
+        .filter(models.Item.item_type_id == item_type_id)
+        .all()
+    )
+
+    for item in linked_items:
         item.item_type_id = None
 
     db.delete(item_type)

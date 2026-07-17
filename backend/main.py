@@ -584,10 +584,10 @@ def delete_item_type(
     if item_type is None:
         raise HTTPException(status_code=404, detail="Item type not found")
 
-    if item_type == "has_links":
+    if item_type == "has_active_items":
         raise HTTPException(
             status_code=400,
-            detail="Cannot delete item type while inventory items or orders are linked to it",
+            detail="Cannot delete item type while active stock items are linked to it",
         )
 
     crud.create_audit_log(
