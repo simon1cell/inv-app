@@ -1,7 +1,30 @@
+# Dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+
+# Next.js
+/.next/
+/out/
+/build
+
+# Testing
+/coverage
+
 # Environment variables and secrets
 .env
 .env.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 !.env.example
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
 
 # Python
 venv/
@@ -13,25 +36,10 @@ __pycache__/
 .coverage
 htmlcov/
 
-# Local databases
-*.db
-*.sqlite
-*.sqlite3
-
-# Node / React
-node_modules/
-dist/
-.vite/
-coverage/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Editors and operating systems
+# Editors and OS
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
-
-# Local uploaded order documents
-backend/uploads/
+*.tsbuildinfo
+next-env.d.ts

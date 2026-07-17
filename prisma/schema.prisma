@@ -1,0 +1,156 @@
+datasource db {
+  provider = "sqlite"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id              Int      @id @default(autoincrement())
+  username        String   @unique
+  hashed_password String
+  role            String   @default("user")
+
+  @@map("users")
+}
+
+model ItemType {
+  id                 Int      @id @default(autoincrement())
+  name               String
+  category           String?
+  brand              String?
+  reorder_threshold  Int      @default(5)
+  critical_threshold Int      @default(1)
+  notes              String?
+  items              Item[]
+  orders             Order[]
+
+  @@map("item_types")
+}
+
+model Item {
+  id                 Int               @id @default(autoincrement())
+  item_type_id       Int?
+  item_type          ItemType?         @relation(fields: [item_type_id], references: [id])
+  catalogue_num      String            @unique
+  item_name          String
+  lot_num            Int?
+  quantity           Int
+  storage_id         String
+  expiry_date        DateTime?
+  last_restocked     DateTime
+  brand              String
+  reorder_threshold  Int               @default(5)
+  critical_threshold Int               @default(1)
+  category           String            @default("Uncategorized")
+  shelf_num          String?
+  tags               String?           @default("")
+  last_used_at       DateTime?
+  is_archived        Boolean           @default(false)
+  comments           ItemComment[]
+  comment_reads      ItemCommentRead[]
+  audit_logs         AuditLog[]
+
+  @@map("items")
+}
+
+model ItemComment {
+  id         Int      @id @default(autoincrement())
+  item_id    String
+  item       Item     @relation(fields: [item_id], references: [catalogue_num])
+  username   String
+  comment    String
+  created_at DateTime @default(now())
+
+  @@map("item_comments")
+}
+
+model ItemCommentRead {
+  id           Int      @id @default(autoincrement())
+  username     String
+  item_id      String
+  item         Item     @relation(fields: [item_id], references: [catalogue_num])
+  last_seen_at DateTime @default(now())
+
+  @@unique([username, item_id], name: "uq_item_comment_reads_username_item_id")
+  @@map("item_comment_reads")
+}
+
+model AuditLog {
+  id            Int      @id @default(autoincrement())
+  username      String
+  action        String
+  item_id       Int?
+  item          Item?    @relation(fields: [item_id], references: [id])
+  details       String?
+  timestamp     DateTime @default(now())
+  old_quantity  Int?
+  change_amount Int?
+  new_quantity  Int?
+
+  @@map("audit_logs")
+}
+
+model Order {
+  id                     Int             @id @default(autoincrement())
+  item_type_id           Int?
+  item_type              ItemType?       @relation(fields: [item_type_id], references: [id])
+  order_date             DateTime?
+  order_placed_by        String?
+  po_number              String?
+  vendor                 String?
+  category               String?
+  catalog_no             String?
+  item_name              String
+  units_ordered          Int?
+  price_per_unit         Float?
+  total_price            Float?
+  final_price            Float?
+  availability           String?
+  expected_delivery_date DateTime?
+  order_number           String?
+  delivery_date          DateTime?
+  status                 String          @default("Ordered")
+  received_by            String?
+  date_paid              DateTime?
+  amount_paid            Float?
+  cc_invoice             String?
+  documents              OrderDocument[]
+  events                 OrderEvent[]
+
+  @@map("orders")
+}
+
+model OrderDocument {
+  id                Int      @id @default(autoincrement())
+  order_id          Int?
+  order             Order?   @relation(fields: [order_id], references: [id])
+  document_type     String
+  source            String   @default("manual")
+  sender            String?
+  subject           String?
+  email_message_id  String?  @unique
+  original_filename String?
+  stored_filename   String?
+  file_path         String?
+  content_type      String?
+  extracted_json    String?
+  confidence        Float?
+  reviewed          Boolean  @default(false)
+  received_at       DateTime @default(now())
+
+  @@map("order_documents")
+}
+
+model OrderEvent {
+  id         Int      @id @default(autoincrement())
+  order_id   Int
+  order      Order    @relation(fields: [order_id], references: [id])
+  event_type String
+  notes      String?
+  created_by String?
+  created_at DateTime @default(now())
+
+  @@map("order_events")
+}

@@ -1,121 +1,106 @@
 # POD--Flik: 1Cell.AI Inventory Tracking System
 
-A full-stack laboratory inventory tracking and order management system built with a FastAPI backend and a Next.js (TypeScript) frontend.
+A unified full-stack laboratory inventory tracking and order management system built entirely on Next.js 16, TypeScript, Prisma 7, and shadcn/ui.
 
 ---
 
 ## <img src="https://unpkg.com/ionicons@5.5.2/dist/svg/git-network-outline.svg" width="20" height="20" /> Architecture Overview
 
-The project uses a decoupled Client-Server architecture. The frontend is a single-page style Next.js application that communicates entirely via JSON APIs with a FastAPI server.
+The application has been migrated from a decoupled FastAPI + Next.js stack into a unified full-stack Next.js application. Next.js handles both the front-end user interface and the back-end API route handlers (`/api/*`) end-to-end.
 
 ```mermaid
 graph TD
-    Client[Next.js Frontend - Port 3000/3001] <-->|HTTP JSON / JWT| API[FastAPI Backend - Port 8000]
-    API <-->|SQLAlchemy ORM| DB[(Database: SQLite / PostgreSQL)]
+    User([Browser Client]) <-->|React 19 / HTML5| UI[Next.js App Router UI]
+    UI <-->|HTTP JSON / JWT| API[Next.js Route Handlers /api/*]
+    API <-->|Prisma 7 Client| DB[(Database: SQLite)]
 ```
 
-- **Frontend**: Serves the user interface, manages state locally in React, and consumes the backend REST endpoints.
-- **Backend**: Processes business logic, handles security & authentication (JWT + bcrypt), and executes database operations.
-- **Database**: Stores inventory items, categories/brands, order history, audit logs, and users.
+- **Frontend**: Next.js App Router (React 19) styled with Tailwind CSS v4 and shadcn/ui components.
+- **Backend**: Next.js Route Handlers (`/api/*`) processing business transactions, security, JWT authentication, and excel importing/exporting.
+- **Database**: Prisma 7 ORM with SQLite, utilizing `@prisma/adapter-better-sqlite3` and the `better-sqlite3` driver.
 
 ---
 
-## <img src="https://unpkg.com/ionicons@5.5.2/dist/svg/cog-outline.svg" width="20" height="20" /> Backend (FastAPI)
+## <img src="https://unpkg.com/ionicons@5.5.2/dist/svg/server-outline.svg" width="20" height="20" /> Database Connection (Prisma 7)
 
-The backend is built using **Python 3** and **FastAPI** (`backend/main.py`), optimized for high-performance and asynchronous task handling.
-
-### Key Components
-- **API Framework**: FastAPI provides automatic OpenAPI interactive documentation (available at `/docs`) and Pydantic schema validation.
-- **ORM & Migrations**: SQLAlchemy is used as the Object-Relational Mapper (`models.py`) with Alembic handles database migrations.
-- **Authentication**: JWT authentication tokens generated with `python-jose` using HMAC SHA-256 signatures (`auth.py`). Passwords are securely hashed using `bcrypt` (via `argon2-cffi`/`pwdlib` integrations).
-
----
-
-## <img src="https://unpkg.com/ionicons@5.5.2/dist/svg/server-outline.svg" width="20" height="20" /> Database Connection
-
-The database configuration is managed dynamically in `backend/database.py`.
+Prisma 7 uses explicit JavaScript driver adapters for SQLite connectivity rather than default Rust engines.
 
 ### 1. Connection String Resolution
-The backend queries the `DATABASE_URL` environment variable. If it's not set, it defaults to a local SQLite database file:
-```python
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./inventory.db")
-```
-
-### 2. Auto-Initialization
-When running in development, the database schema is automatically checked and created on application startup without requiring manual migration steps:
-```python
-models.Base.metadata.create_all(bind=engine)
-```
-
-### 3. Drivers
-- **SQLite**: Zero-config file-based DB, configured with `check_same_thread=False` for concurrent API handling.
-- **PostgreSQL**: Production-ready support enabled via the `psycopg2-binary` driver. The engine automatically normalizes legacy `postgres://` connection strings to SQLAlchemy's expected `postgresql://` protocol.
-
----
-
-## <img src="https://unpkg.com/ionicons@5.5.2/dist/svg/desktop-outline.svg" width="20" height="20" /> Frontend (Next.js & TypeScript)
-
-The frontend is a modern Next.js project designed with responsive styling and robust type definitions.
-
-### Key Components
-- **Framework**: Next.js 16 (using the App Router structure `app/page.tsx`) with React 19.
-- **Type Safety**: Full TypeScript integration for inventory types, user roles, comments, and order records (`types/inventory.ts`).
-- **Styling**: Built on modern styling tokens using Vanilla CSS (`app/globals.css` and custom components) alongside Tailwind CSS.
-- **Views**: A client-side view router dynamically mounts dashboards, stock lists, orders, audit logs, and user admin views based on the logged-in user's roles.
-
----
-
-## <img src="https://unpkg.com/ionicons@5.5.2/dist/svg/link-outline.svg" width="20" height="20" /> Frontend-Backend Connection
-
-The bridge between the client and server is defined in `frontend/lib/api.ts`.
-
-### 1. API Client Configuration
-The frontend automatically resolves the server location using the `NEXT_PUBLIC_API_BASE_URL` environment variable, defaulting to `http://127.0.0.1:8000`:
+Environment variables are resolved in `prisma.config.ts` and loaded via `dotenv/config`. The connection URL defaults to a local SQLite database file:
 ```typescript
-const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000"
-).replace(/\/$/, "");
+DATABASE_URL="file:./dev.db"
 ```
 
-### 2. Authentication Flow
-1. The user logs in via the login form, sending credentials to `/login`.
-2. The server responds with a JWT `access_token`.
-3. The frontend stores this token in state and attaches it to the HTTP headers of all subsequent API calls:
-   ```typescript
-   Authorization: Bearer <token>
-   ```
+### 2. Adapter Configuration
+The database client is initialized in `lib/prisma.ts` utilizing the `PrismaBetterSqlite3` adapter:
+```typescript
+import { PrismaClient } from "@prisma/client";
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import "dotenv/config";
+
+const getPrisma = () => {
+  const dbUrl = process.env.DATABASE_URL || "file:./dev.db";
+  const adapter = new PrismaBetterSqlite3({ url: dbUrl });
+  return new PrismaClient({ adapter });
+};
+```
+
+---
+
+## <img src="https://unpkg.com/ionicons@5.5.2/dist/svg/cog-outline.svg" width="20" height="20" /> API Route Handlers
+
+The backend logic is served via Next.js App Router dynamic API routes:
+- **Authentication**: `/api/register`, `/api/login`, `/api/me` (stateless JWTs).
+- **Inventory Items**: `/api/items` (GET/POST), `/api/items/[id]` (PUT/DELETE), `/api/items/[id]/transaction` (POST use/restock).
+- **Categories & Types**: `/api/item-types` (GET/POST), `/api/item-types/[id]` (PUT/DELETE).
+- **Comments & Notifications**: `/api/items/[id]/comments` (GET/POST), `/api/item-comments/[id]` (DELETE), `/api/comments/notifications` (GET), `/api/items/[id]/comments/read` (POST), `/api/item-types/[id]/comments/read` (POST).
+- **Audit Logs**: `/api/audit-logs` (GET).
+- **User Administration**: `/api/users` (GET/POST), `/api/users/[id]` (DELETE).
+- **Order Management**: `/api/orders` (GET/POST), `/api/orders/import` (POST Excel parse), `/api/orders/export` (GET Excel sheet), `/api/orders/[id]/documents` (GET/POST), `/api/order-documents/[id]/download` (GET file stream).
+
+---
+
+## <img src="https://unpkg.com/ionicons@5.5.2/dist/svg/desktop-outline.svg" width="20" height="20" /> Frontend (Next.js & shadcn/ui)
+
+The UI has been updated to integrate shadcn/ui components styled with Tailwind CSS v4 variables:
+- **Framework**: Next.js 16 App Router.
+- **Components**: Standard components (buttons, tables, inputs, dialogs, selects) use shadcn/ui primitives.
+- **Styling**: Tailwind CSS v4 configured with HSL variables for automatic light/dark mode compliance in `app/globals.css`.
 
 ---
 
 ## <img src="https://unpkg.com/ionicons@5.5.2/dist/svg/rocket-outline.svg" width="20" height="20" /> Running the Application Locally
 
-### Prerequisite
-Ensure you have **Python 3.10+** and **Node.js 18+** installed.
+### Prerequisites
+Ensure you have **Node.js 18+** installed.
 
-### 1. Start Backend
-Navigate to the backend directory, set up your virtual environment, install packages, and launch:
+### 1. Install Dependencies
+Install all package dependencies:
 ```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate  # Or .venv\Scripts\activate on Windows
-pip install -r requirements.txt
-uvicorn main:app --reload
+npm install
 ```
-The server will start on `http://127.0.0.1:8000`.
 
-### 2. Register the Admin Account
-Since the SQLite database is empty on first startup, the first user registered is automatically granted the **Admin** role. Create your account:
+### 2. Configure Database & Environment
+Run the Prisma migration to sync the database schema and generate the local client:
 ```bash
-curl -X POST http://127.0.0.1:8000/register \
+npx prisma db push
+```
+
+### 3. Bootstrap Admin User
+Start the Next.js server first:
+```bash
+npm run dev
+```
+The application will open on `http://localhost:3000` (or `http://localhost:3001` if port 3000 is occupied).
+Since the SQLite database starts empty, the first user registered via the UI registration page (or via curl below) is automatically promoted to the **Admin** role:
+```bash
+curl -X POST http://localhost:3000/api/register \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "yourpassword"}'
 ```
 
-### 3. Start Frontend
-In a new terminal window, navigate to the frontend directory, install packages, and start:
+### 4. Running Validation Tests
+To verify all database transactions, authentication, and backend API operations, run the automated test suite:
 ```bash
-cd frontend
-npm install
-npm run dev
+npx tsx scripts/test-api.ts
 ```
-The app will open on `http://localhost:3000` (or `http://localhost:3001` if port 3000 is occupied). Log in using the admin account created in step 2.
