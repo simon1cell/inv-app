@@ -57,7 +57,7 @@ type BackendItem = {
   quantity: number;
   storage_id: string;
   expiry_date: string | null;
-  last_restocked: string;
+  last_restocked?: string;
   brand?: string | null;
   reorder_threshold?: number | null;
   critical_threshold?: number | null;
@@ -182,7 +182,7 @@ type ItemPayload = {
   quantity: number;
   storage_id: string;
   expiry_date?: string | null;
-  last_restocked: string;
+  last_restocked?: string;
   brand?: string | null;
   reorder_threshold?: number;
   critical_threshold?: number;
