@@ -334,3 +334,8 @@ The entire application UI has been upgraded using the **UI/UX MaxPro Clinical-Te
 - Custom SVG files in `/public` have been removed in favor of unified **Lucide React** icons.
 - The base `Button` component (`components/ui/button.tsx`) was enhanced to support `icon`, `iconClass`, `iconPlacement` ("start" | "end"), and `text` props, ensuring all interactive actions consist of both a matched icon and a text label consistently.
 
+### Professional Confirmation Dialogs:
+- Removed all native browser-blocking `window.confirm` dialogs.
+- Introduced a reusable React-based `ConfirmDialog` component leveraging shadcn/ui Dialog structures.
+- Actions (such as document deletion, user deletion, stock archiving, comment removal, and item type deletion) now use modern, visual confirmation modals with color-coded warning indicators and animated transitions.
+
