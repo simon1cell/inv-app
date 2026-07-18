@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import AddItemForm from "@/components/AddItemForm";
 import AddOrderForm from "@/components/AddOrderForm";
 import AuditLogTable from "@/components/AuditLogTable";
@@ -163,6 +164,14 @@ export default function Home() {
   const [orderSeedItem, setOrderSeedItem] = useState<InventoryItem | null>(null);
 
   const [token, setToken] = useState("");
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    description: string;
+    confirmText?: string;
+    variant?: "destructive" | "default";
+    onConfirm: () => void;
+  } | null>(null);
   const [user, setUser] = useState<CurrentUser | null>(null);
 
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
@@ -438,21 +447,25 @@ export default function Home() {
     if (!isAdmin) return;
 
     const item = itemTypes.find((candidate) => candidate.id === itemId);
+    const description = item
+      ? `Are you sure you want to delete the item type "${item.name}"? This only works if no inventory items or orders are linked to it.`
+      : "Are you sure you want to delete this item type?";
 
-    const confirmed = window.confirm(
-      item
-        ? `Delete item type "${item.name}"? This only works if no inventory items or orders are linked to it.`
-        : "Delete this item type?",
-    );
+    setConfirmDialog({
+      open: true,
+      title: "Delete Item Type",
+      description,
+      confirmText: "Delete",
+      variant: "destructive",
+      onConfirm: () => void executeDeleteItemType(itemId),
+    });
+  }
 
-    if (!confirmed) return;
-
+  async function executeDeleteItemType(itemId: number) {
     setError("");
-
     try {
       await deleteItemType(token, itemId);
       await refreshInventory();
-
       showToast("Item type deleted");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete item type");
@@ -471,21 +484,25 @@ export default function Home() {
     if (!isAdmin) return;
 
     const item = inventory.find((candidate) => candidate.id === itemId);
+    const description = item
+      ? `Are you sure you want to archive stock item "${item.itemName}" (${item.catalogueNum})? This will not change order history.`
+      : "Are you sure you want to archive this stock item? This will not change order history.";
 
-    const confirmed = window.confirm(
-      item
-        ? `Archive stock item "${item.itemName}" (${item.catalogueNum})? This will not change order history.`
-        : "Archive this stock item? This will not change order history.",
-    );
+    setConfirmDialog({
+      open: true,
+      title: "Archive Stock Item",
+      description,
+      confirmText: "Archive",
+      variant: "destructive",
+      onConfirm: () => void executeDeleteStockItem(itemId),
+    });
+  }
 
-    if (!confirmed) return;
-
+  async function executeDeleteStockItem(itemId: string) {
     setError("");
-
     try {
       await deleteItem(token, itemId);
       await refreshInventory();
-
       showToast("Stock item archived");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to archive stock item");
@@ -560,16 +577,21 @@ export default function Home() {
   async function handleDeleteComment(commentId: number) {
     if (!isAdmin) return;
 
-    const confirmed = window.confirm("Delete this comment?");
+    setConfirmDialog({
+      open: true,
+      title: "Delete Comment",
+      description: "Are you sure you want to delete this comment? This action cannot be undone.",
+      confirmText: "Delete",
+      variant: "destructive",
+      onConfirm: () => void executeDeleteComment(commentId),
+    });
+  }
 
-    if (!confirmed) return;
-
+  async function executeDeleteComment(commentId: number) {
     setError("");
-
     try {
       await deleteItemComment(token, commentId);
       await refreshComments();
-
       showToast("Comment deleted");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete comment");
@@ -938,16 +960,21 @@ export default function Home() {
   async function handleDeleteUser(userId: number) {
     if (!isAdmin) return;
 
-    const confirmed = window.confirm("Delete this user? This cannot be undone.");
+    setConfirmDialog({
+      open: true,
+      title: "Delete User",
+      description: "Are you sure you want to delete this user? This cannot be undone.",
+      confirmText: "Delete",
+      variant: "destructive",
+      onConfirm: () => void executeDeleteUser(userId),
+    });
+  }
 
-    if (!confirmed) return;
-
+  async function executeDeleteUser(userId: number) {
     setError("");
-
     try {
       await deleteUser(token, userId);
       await refreshUsers();
-
       showToast("User deleted");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete user");
@@ -1231,6 +1258,20 @@ export default function Home() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {confirmDialog && (
+        <ConfirmDialog
+          open={confirmDialog.open}
+          onOpenChange={(open) => {
+            if (!open) setConfirmDialog(null);
+          }}
+          title={confirmDialog.title}
+          description={confirmDialog.description}
+          confirmText={confirmDialog.confirmText}
+          variant={confirmDialog.variant}
+          onConfirm={confirmDialog.onConfirm}
+        />
+      )}
     </div>
   );
 }

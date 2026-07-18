@@ -6,6 +6,7 @@ import { Plus, Search, RefreshCw, Download, Upload, Truck, CreditCard, FileText,
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import ConfirmDialog from "./ConfirmDialog";
 import {
   Table,
   TableBody,
@@ -195,6 +196,7 @@ export default function OrdersPage({
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [documentsError, setDocumentsError] = useState("");
   const [deletingDocumentId, setDeletingDocumentId] = useState<number | null>(null);
+  const [documentToDeleteId, setDocumentToDeleteId] = useState<number | null>(null);
 
   async function openDocumentsModal(orderId: number) {
     setDocumentModalOrderId(orderId);
@@ -221,8 +223,14 @@ export default function OrdersPage({
     await onDownloadDocument(document.id, document.originalFilename ?? `order-document-${document.id}`);
   }
 
-  async function handleDeleteDocument(documentId: number) {
-    if (!window.confirm("Delete this document from the server?")) return;
+  function initiateDeleteDocument(documentId: number) {
+    setDocumentToDeleteId(documentId);
+  }
+
+  async function executeDeleteDocument() {
+    if (documentToDeleteId === null) return;
+    const documentId = documentToDeleteId;
+    setDocumentToDeleteId(null);
     setDeletingDocumentId(documentId);
     try {
       await onDeleteDocument(documentId);
@@ -612,7 +620,7 @@ export default function OrdersPage({
                         type="button"
                         className="mini-btn danger"
                         disabled={deletingDocumentId === document.id}
-                        onClick={() => void handleDeleteDocument(document.id)}
+                        onClick={() => initiateDeleteDocument(document.id)}
                         icon={Trash2}
                         text={deletingDocumentId === document.id ? "Deleting…" : "Delete"}
                       />
@@ -624,6 +632,14 @@ export default function OrdersPage({
           </div>
         </div>
       )}
+      <ConfirmDialog
+        open={documentToDeleteId !== null}
+        onOpenChange={(open) => { if (!open) setDocumentToDeleteId(null); }}
+        title="Delete Document"
+        description="Are you sure you want to delete this document from the server? This action cannot be undone."
+        confirmText="Delete"
+        onConfirm={() => void executeDeleteDocument()}
+      />
     </section>
   );
 }
