@@ -1,14 +1,33 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
+import {
+  FlaskConical,
+  MessageSquare,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+} from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { SortableHeader, TablePaginator } from "@/components/ui/sortable-table";
+import { useSortable } from "@/lib/table-hooks";
 
 import StatusBadge from "@/components/StatusBadge";
-import {
-  emojiFor,
-  type InventoryItem,
-  type ItemType,
-  type Status,
-} from "@/types/inventory";
+import { type InventoryItem, type ItemType, type Status } from "@/types/inventory";
+
+const PAGE_SIZE = 8;
 
 type StockItemsTableProps = {
   items: InventoryItem[];
@@ -22,12 +41,7 @@ type StockItemsTableProps = {
 };
 
 type FilterValue = Status | "everything";
-type StockSort =
-  | "name"
-  | "quantity-low"
-  | "quantity-high"
-  | "catalog"
-  | "storage";
+type SortKey = "name" | "itemType" | "catalog" | "brand" | "lot" | "storage" | "quantity" | "expiry" | "status";
 
 const FILTERS: Array<{ label: string; value: FilterValue }> = [
   { label: "Everything", value: "everything" },
@@ -35,6 +49,10 @@ const FILTERS: Array<{ label: string; value: FilterValue }> = [
   { label: "Critical", value: "critical" },
   { label: "Out of Stock", value: "out" },
 ];
+
+const STATUS_ORDER: Record<string, number> = {
+  out: 0, critical: 1, low: 2, expiring: 3, transit: 4, high: 5,
+};
 
 export default function StockItemsTable({
   items,
@@ -48,66 +66,69 @@ export default function StockItemsTable({
 }: StockItemsTableProps) {
   const [filter, setFilter] = useState<FilterValue>("everything");
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<StockSort>("name");
+  const [currentPage, setCurrentPage] = useState(1);
+  const { sort, toggleSort } = useSortable<SortKey>("name");
 
-  const itemTypeById = useMemo(() => {
-    return new Map(itemTypes.map((itemType) => [itemType.id, itemType]));
-  }, [itemTypes]);
+  const itemTypeById = useMemo(
+    () => new Map(itemTypes.map((t) => [t.id, t])),
+    [itemTypes],
+  );
 
-  const visibleItems = useMemo(() => {
+  const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
 
     return [...items]
       .filter((item) => {
-        const itemType = item.itemTypeId
-          ? itemTypeById.get(item.itemTypeId)
-          : null;
-
+        const type = item.itemTypeId ? itemTypeById.get(item.itemTypeId) : null;
         const matchesFilter = filter === "everything" || item.status === filter;
-
-        const searchText = [
-          item.itemName,
-          itemType?.name,
-          item.category,
-          item.brand,
-          item.catalogueNum,
-          item.lotNum,
-          item.shelfNum,
-          item.storageId,
-          item.quantity,
-          item.expiryDate,
-          item.tags.join(" "),
-        ]
-          .filter((value) => value !== null && value !== undefined)
-          .join(" ")
-          .toLowerCase();
-
-        return matchesFilter && searchText.includes(query);
+        const text = [
+          item.itemName, type?.name, item.category, item.brand,
+          item.catalogueNum, item.lotNum, item.shelfNum, item.storageId,
+          item.quantity, item.expiryDate, item.tags.join(" "),
+        ].filter(Boolean).join(" ").toLowerCase();
+        return matchesFilter && text.includes(query);
       })
       .sort((a, b) => {
-        if (sort === "quantity-low") return a.quantity - b.quantity;
-        if (sort === "quantity-high") return b.quantity - a.quantity;
-        if (sort === "catalog") return a.catalogueNum.localeCompare(b.catalogueNum);
-        if (sort === "storage") return a.storageId.localeCompare(b.storageId);
+        const dir = sort.direction === "asc" ? 1 : -1;
+        const typeA = a.itemTypeId ? itemTypeById.get(a.itemTypeId) : null;
+        const typeB = b.itemTypeId ? itemTypeById.get(b.itemTypeId) : null;
 
-        return a.itemName.localeCompare(b.itemName);
+        switch (sort.key) {
+          case "name":      return a.itemName.localeCompare(b.itemName) * dir;
+          case "itemType":  return (typeA?.name ?? "").localeCompare(typeB?.name ?? "") * dir;
+          case "catalog":   return a.catalogueNum.localeCompare(b.catalogueNum) * dir;
+          case "brand":     return (a.brand ?? "").localeCompare(b.brand ?? "") * dir;
+          case "lot":       return (a.lotNum ?? "").localeCompare(b.lotNum ?? "") * dir;
+          case "storage":   return a.storageId.localeCompare(b.storageId) * dir;
+          case "quantity":  return (a.quantity - b.quantity) * dir;
+          case "expiry":    return (a.expiryDate ?? "").localeCompare(b.expiryDate ?? "") * dir;
+          case "status":    return ((STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99)) * dir;
+          default:          return a.itemName.localeCompare(b.itemName);
+        }
       });
-  }, [filter, itemTypeById, items, search, sort]);
+  }, [filter, items, itemTypeById, search, sort]);
+
+  useEffect(() => { setCurrentPage(1); }, [filter, search, sort.key, sort.direction]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const visibleItems = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   return (
     <div className="card">
       <div className="card-head">
         <div>
           <h2>Stock Items</h2>
-          <p className="sub">
-            Individual catalog, lot, storage, and quantity records
-          </p>
+          <p className="sub">Individual catalog, lot, storage, and quantity records</p>
         </div>
 
         {isAdmin && (
-          <button type="button" className="btn primary" onClick={onAddItem}>
-            + Add Stock Item
-          </button>
+          <Button
+            size="sm"
+            onClick={onAddItem}
+            icon={Plus}
+            text="Add Stock Item"
+          />
         )}
       </div>
 
@@ -126,129 +147,139 @@ export default function StockItemsTable({
         </div>
 
         <div className="search">
-          <span className="search-icon">⌕</span>
-          <input
+          <span className="search-icon">
+            <Search size={14} strokeWidth={2} />
+          </span>
+          <Input
+            className="h-8 text-sm border-0 bg-transparent shadow-none focus-visible:ring-0 pl-6"
             placeholder="Search stock items"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-
-        <select
-          className="select-control"
-          value={sort}
-          onChange={(event) => setSort(event.target.value as StockSort)}
-        >
-          <option value="name">Name</option>
-          <option value="catalog">Catalog Number</option>
-          <option value="storage">Storage</option>
-          <option value="quantity-low">Quantity: Low to High</option>
-          <option value="quantity-high">Quantity: High to Low</option>
-        </select>
       </div>
 
       <div className="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>No</th>
-              <th>Stock Item</th>
-              <th>Item Type</th>
-              <th>Catalog #</th>
-              <th>Brand</th>
-              <th>Lot #</th>
-              <th>Storage</th>
-              <th>Shelf</th>
-              <th>Qty</th>
-              <th>Expiry</th>
-              <th>Status</th>
-              <th>Comments</th>
-              {isAdmin && <th />}
-            </tr>
-          </thead>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-10">No</TableHead>
+              <SortableHeader label="Stock Item"  sortKey="name"     sort={sort} onSort={toggleSort} />
+              <SortableHeader label="Item Type"   sortKey="itemType" sort={sort} onSort={toggleSort} />
+              <SortableHeader label="Catalog #"   sortKey="catalog"  sort={sort} onSort={toggleSort} />
+              <SortableHeader label="Brand"       sortKey="brand"    sort={sort} onSort={toggleSort} />
+              <SortableHeader label="Lot #"       sortKey="lot"      sort={sort} onSort={toggleSort} />
+              <SortableHeader label="Storage"     sortKey="storage"  sort={sort} onSort={toggleSort} />
+              <TableHead>Shelf</TableHead>
+              <SortableHeader label="Qty"         sortKey="quantity" sort={sort} onSort={toggleSort} />
+              <SortableHeader label="Expiry"      sortKey="expiry"   sort={sort} onSort={toggleSort} />
+              <SortableHeader label="Status"      sortKey="status"   sort={sort} onSort={toggleSort} />
+              <TableHead>Comments</TableHead>
+              {isAdmin && <TableHead />}
+            </TableRow>
+          </TableHeader>
 
-          <tbody>
+          <TableBody>
             {visibleItems.map((item, index) => {
-              const itemType = item.itemTypeId
-                ? itemTypeById.get(item.itemTypeId)
-                : null;
-
+              const itemType = item.itemTypeId ? itemTypeById.get(item.itemTypeId) : null;
               const commentCount = commentCountsByItemId[item.id] ?? 0;
+              const absoluteIndex = (safePage - 1) * PAGE_SIZE + index + 1;
 
               return (
-                <tr key={item.id}>
-                  <td className="strong-text">{index + 1}</td>
+                <motion.tr
+                  key={item.id}
+                  className="border-b transition-colors hover:bg-muted/40"
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.025, duration: 0.18 }}
+                >
+                  <TableCell className="strong-text">{absoluteIndex}</TableCell>
 
-                  <td>
+                  <TableCell>
                     <div className="item-cell">
-                      <div className="thumb">{emojiFor(item.itemName)}</div>
+                      <div className="thumb">
+                        <FlaskConical size={16} strokeWidth={1.6} />
+                      </div>
                       <div>
                         <div className="nm">{item.itemName}</div>
                         <div className="sub">{item.catalogueNum}</div>
                       </div>
                     </div>
-                  </td>
+                  </TableCell>
 
-                  <td>{itemType?.name ?? "Unlinked"}</td>
-                  <td>{item.catalogueNum}</td>
-                  <td>{item.brand}</td>
-                  <td>{item.lotNum}</td>
-                  <td>{item.storageId}</td>
-                  <td>{item.shelfNum}</td>
-                  <td className="strong-text">{item.quantity}</td>
-                  <td>{item.expiryDate}</td>
+                  <TableCell>{itemType?.name ?? "Unlinked"}</TableCell>
+                  <TableCell>{item.catalogueNum}</TableCell>
+                  <TableCell>{item.brand}</TableCell>
+                  <TableCell>{item.lotNum}</TableCell>
+                  <TableCell>{item.storageId}</TableCell>
+                  <TableCell>{item.shelfNum}</TableCell>
+                  <TableCell className="strong-text">{item.quantity}</TableCell>
+                  <TableCell>{item.expiryDate}</TableCell>
 
-                  <td>
+                  <TableCell>
                     <StatusBadge status={item.status} />
-                  </td>
+                  </TableCell>
 
-                  <td>
+                  <TableCell>
                     <button
                       type="button"
                       className={commentCount > 0 ? "comment-chip has-comments" : "comment-chip"}
                       onClick={() => onViewComments(item)}
                     >
-                      💬 {commentCount}
+                      <MessageSquare size={13} strokeWidth={1.75} />
+                      {commentCount}
                     </button>
-                  </td>
+                  </TableCell>
 
                   {isAdmin && (
-                    <td>
+                    <TableCell>
                       <div className="row-actions">
-                        <button
+                        <motion.button
                           type="button"
                           className="icon-btn"
                           title="Edit stock item"
                           onClick={() => onEditItem(item)}
+                          whileHover={{ scale: 1.15 }}
+                          whileTap={{ scale: 0.9 }}
                         >
-                          ✎
-                        </button>
+                          <Pencil size={14} strokeWidth={1.75} />
+                        </motion.button>
 
-                        <button
+                        <motion.button
                           type="button"
                           className="icon-btn del"
                           title="Archive stock item"
                           onClick={() => onDeleteItem(item.id)}
+                          whileHover={{ scale: 1.15 }}
+                          whileTap={{ scale: 0.9 }}
                         >
-                          🗑
-                        </button>
+                          <Trash2 size={14} strokeWidth={1.75} />
+                        </motion.button>
                       </div>
-                    </td>
+                    </TableCell>
                   )}
-                </tr>
+                </motion.tr>
               );
             })}
 
             {visibleItems.length === 0 && (
-              <tr>
-                <td colSpan={isAdmin ? 13 : 12} className="empty-row">
+              <TableRow>
+                <TableCell colSpan={isAdmin ? 13 : 12} className="empty-row">
                   No stock items found.
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
+
+      <TablePaginator
+        page={safePage}
+        totalPages={totalPages}
+        totalItems={filtered.length}
+        pageSize={PAGE_SIZE}
+        onPageChange={setCurrentPage}
+      />
     </div>
   );
 }

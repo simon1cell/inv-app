@@ -210,18 +210,7 @@ export const ITEM_TYPES = [
   "Sanitizer Gel (500ml)",
 ];
 
-export function emojiFor(name: string) {
-  const value = name.toLowerCase();
 
-  if (value.includes("glove")) return "🧤";
-  if (value.includes("pipette")) return "💉";
-  if (value.includes("tape")) return "🎞️";
-  if (value.includes("reagent") || value.includes("dna")) return "🧪";
-  if (value.includes("mask")) return "😷";
-  if (value.includes("sanitizer")) return "🧴";
-
-  return "📦";
-}
 
 export function getStatusFromQuantity(quantity: number): Status {
   if (quantity <= 0) return "out";

@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ArrowLeft, Save, X } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 import type { ItemType } from "@/types/inventory";
 
@@ -17,11 +22,7 @@ type ItemTypeFormProps = {
   onSubmitItemType: (payload: ItemTypePayload) => Promise<void>;
 };
 
-export default function ItemTypeForm({
-  itemType,
-  onBack,
-  onSubmitItemType,
-}: ItemTypeFormProps) {
+export default function ItemTypeForm({ itemType, onBack, onSubmitItemType }: ItemTypeFormProps) {
   const [form, setForm] = useState({
     name: itemType.name,
     category: itemType.category ?? "",
@@ -40,11 +41,9 @@ export default function ItemTypeForm({
     });
   }, [itemType]);
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
     setSaving(true);
-
     try {
       await onSubmitItemType({
         name: form.name.trim(),
@@ -57,92 +56,51 @@ export default function ItemTypeForm({
     }
   }
 
+  const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+
   return (
     <section className="view active">
-      <p className="section-tag">ITEM TYPE</p>
+      <div className="page-header">
+        <div>
+          <h2 className="page-title">Edit Item Type</h2>
+          <p className="page-sub">
+            Edit the grouped inventory record. Brands and quantity come from linked stock items.
+          </p>
+        </div>
+      </div>
 
       <form className="card form-card" onSubmit={handleSubmit}>
-        <div className="card-head">
-          <div>
-            <h2>Edit Item Type</h2>
-            <p className="sub">
-              Edit the grouped inventory record. Brands and quantity come from
-              linked stock items.
-            </p>
+        <div className="form-grid">
+          <div className="form-field">
+            <Label htmlFor="name">Item Type Name <span className="req-star">*</span></Label>
+            <Input id="name" value={form.name} onChange={set("name")} required />
           </div>
 
-          <button type="button" className="btn" onClick={onBack}>
-            Back
-          </button>
-        </div>
+          <div className="form-field">
+            <Label htmlFor="category">Category</Label>
+            <Input id="category" value={form.category} onChange={set("category")} />
+          </div>
 
-        <div className="form-grid">
-          <label>
-            Item Type Name
-            <input
-              value={form.name}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  name: event.target.value,
-                }))
-              }
-              required
-            />
-          </label>
+          <div className="form-field">
+            <Label htmlFor="reorderThreshold">Reorder Threshold</Label>
+            <Input id="reorderThreshold" type="number" min="0" value={form.reorderThreshold} onChange={set("reorderThreshold")} />
+          </div>
 
-          <label>
-            Category
-            <input
-              value={form.category}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  category: event.target.value,
-                }))
-              }
-            />
-          </label>
-
-          <label>
-            Reorder Threshold
-            <input
-              type="number"
-              min="0"
-              value={form.reorderThreshold}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  reorderThreshold: event.target.value,
-                }))
-              }
-            />
-          </label>
-
-          <label>
-            Critical Threshold
-            <input
-              type="number"
-              min="0"
-              value={form.criticalThreshold}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  criticalThreshold: event.target.value,
-                }))
-              }
-            />
-          </label>
+          <div className="form-field">
+            <Label htmlFor="criticalThreshold">Critical Threshold</Label>
+            <Input id="criticalThreshold" type="number" min="0" value={form.criticalThreshold} onChange={set("criticalThreshold")} />
+          </div>
         </div>
 
         <div className="form-actions">
-          <button type="button" className="btn" onClick={onBack}>
-            Cancel
-          </button>
-
-          <button type="submit" className="btn primary" disabled={saving}>
-            {saving ? "Saving..." : "Save Item Type"}
-          </button>
+          <Button type="button" variant="outline" onClick={onBack} icon={X} text="Cancel" />
+          <Button
+            type="submit"
+            disabled={saving}
+            icon={Save}
+            text={saving ? "Saving…" : "Save Item Type"}
+          />
         </div>
       </form>
     </section>

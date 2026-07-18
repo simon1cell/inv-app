@@ -1,10 +1,23 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  MessageSquare,
+  Package,
+  PackageX,
+  Trash2,
+} from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import AddItemForm from "@/components/AddItemForm";
 import AddOrderForm from "@/components/AddOrderForm";
 import AuditLogTable from "@/components/AuditLogTable";
+import { CommentOverviewDialog, CommentThreadDialog } from "@/components/CommentsModal";
 import InventoryTable from "@/components/InventoryTable";
 import ItemTypeForm from "@/components/ItemTypeForm";
 import OrdersPage from "@/components/OrdersPage";
@@ -959,19 +972,20 @@ export default function Home() {
             void handleLogin();
           }}
         >
-          <div className="brand">
-            <div className="mark" />
-
-            <div>
-              <div className="name">
-                1Cell<span className="ai">.Ai</span>
-              </div>
-              <div className="tag">AI-Powered Precision Oncology</div>
+          <div className="login-header">
+            <div className="login-logo">
+              <Image
+                src="/logo-light.png"
+                alt="1Cell.AI — Ai-Powered Precision Oncology"
+                width={200}
+                height={54}
+                priority
+                style={{ objectFit: "contain" }}
+              />
             </div>
+            <h1>Inventory Tracking</h1>
+            <p>Sign in to manage lab inventory.</p>
           </div>
-
-          <h1>Inventory Tracking</h1>
-          <p>Sign in to manage lab inventory.</p>
 
           <label>
             Username
@@ -996,9 +1010,12 @@ export default function Home() {
 
           {error && <p className="error-message">{error}</p>}
 
-          <button type="submit" className="btn primary" disabled={loggingIn}>
-            {loggingIn ? "Signing in..." : "Sign in"}
-          </button>
+          <Button
+            type="submit"
+            className="btn primary w-full"
+            disabled={loggingIn}
+            text={loggingIn ? "Signing in..." : "Sign in"}
+          />
         </form>
       </main>
     );
@@ -1006,19 +1023,25 @@ export default function Home() {
 
   return (
     <div className="app">
-      <Sidebar view={view} isAdmin={isAdmin} onViewChange={handleViewChange} />
+      <Sidebar
+        view={view}
+        isAdmin={isAdmin}
+        username={user.username}
+        role={user.role}
+        initials={getInitials(user.username)}
+        onViewChange={handleViewChange}
+        onLogout={handleLogout}
+      />
 
       <main className="main">
         <Topbar
-          name={user.username}
-          email={`${user.role} account`}
-          initials={getInitials(user.username)}
+          view={view}
           commentCount={totalUnreadCommentCount}
           onCommentsClick={() => {
             setCommentTarget(null);
             setShowCommentOverview((current) => !current);
           }}
-          onLogout={handleLogout}
+          onViewChange={handleViewChange}
         />
 
         {error && <p className="error-banner">{error}</p>}
@@ -1029,164 +1052,29 @@ export default function Home() {
           <p className="loading-banner">Loading comments...</p>
         )}
 
-        {showCommentOverview && (
-          <div className="modal-backdrop">
-            <section className="comment-modal card">
-              <div className="card-head">
-                <div>
-                  <h2>Unread Comment Center</h2>
-                  <p className="sub">
-                    {totalUnreadCommentCount} unread comments across inventory
-                  </p>
-                </div>
+        {/* Comment overview dialog (bell button) */}
+        <CommentOverviewDialog
+          open={showCommentOverview}
+          onClose={() => setShowCommentOverview(false)}
+          unreadCount={totalUnreadCommentCount}
+          itemTypes={topUnreadCommentItemTypes}
+          stockItems={topUnreadCommentItems}
+          onSelectItemType={(it) => void handleViewItemTypeComments(it)}
+          onSelectStockItem={(item) => void handleViewStockItemComments(item)}
+        />
 
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => setShowCommentOverview(false)}
-                >
-                  Close
-                </button>
-              </div>
-
-              <div className="toolbar">
-                <div>
-                  <h3>Item Types</h3>
-                  {topUnreadCommentItemTypes.length === 0 && (
-                    <p className="sub">No unread item type comments.</p>
-                  )}
-
-                  {topUnreadCommentItemTypes.map(({ itemType, count }) => (
-                    <button
-                      key={itemType.id}
-                      type="button"
-                      className="chip"
-                      onClick={() => void handleViewItemTypeComments(itemType)}
-                    >
-                      {itemType.name} 💬 {count}
-                    </button>
-                  ))}
-                </div>
-
-                <div>
-                  <h3>Stock Items</h3>
-                  {topUnreadCommentItems.length === 0 && (
-                    <p className="sub">No unread stock item comments.</p>
-                  )}
-
-                  {topUnreadCommentItems.map(({ item, count }) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className="chip"
-                      onClick={() => void handleViewStockItemComments(item)}
-                    >
-                      {item.itemName} / {item.catalogueNum} 💬 {count}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </section>
-          </div>
-        )}
-
-        {commentTarget && (
-          <div className="modal-backdrop">
-            <section className="comment-modal card">
-              <div className="card-head">
-                <div>
-                  <h2>{commentTarget.title}</h2>
-                  <p className="sub">
-                    {commentTarget.kind === "item-type"
-                      ? "Aggregated comments from linked stock items"
-                      : "Comments for this stock item"}
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => {
-                    setCommentTarget(null);
-                    setCommentInput("");
-                  }}
-                >
-                  Close
-                </button>
-              </div>
-
-              <div className="toolbar">
-                <div className="search" style={{ flex: 1 }}>
-                  <input
-                    placeholder={
-                      commentTarget.kind === "item-type"
-                        ? "Add item type note, attached to first linked stock item"
-                        : "Add comment"
-                    }
-                    value={commentInput}
-                    onChange={(event) => setCommentInput(event.target.value)}
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  className="btn primary"
-                  onClick={() => void handleCreateComment()}
-                >
-                  Add Comment
-                </button>
-              </div>
-
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Item</th>
-                      <th>Comment</th>
-                      <th>By</th>
-                      <th>Date</th>
-                      {isAdmin && <th />}
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {activeCommentRows.map((comment) => (
-                      <tr key={comment.id}>
-                        <td>
-                          <div className="nm">{comment.itemName}</div>
-                          <div className="sub">{comment.catalogueNum}</div>
-                        </td>
-                        <td>{comment.comment}</td>
-                        <td>{comment.username}</td>
-                        <td>{new Date(comment.createdAt).toLocaleString()}</td>
-
-                        {isAdmin && (
-                          <td>
-                            <button
-                              type="button"
-                              className="icon-btn del"
-                              onClick={() => void handleDeleteComment(comment.id)}
-                            >
-                              🗑
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-
-                    {activeCommentRows.length === 0 && (
-                      <tr>
-                        <td colSpan={isAdmin ? 5 : 4} className="empty-row">
-                          No comments yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          </div>
-        )}
+        {/* Comment thread dialog (per item) */}
+        <CommentThreadDialog
+          open={!!commentTarget}
+          onClose={() => { setCommentTarget(null); setCommentInput(""); }}
+          target={commentTarget as import("@/components/CommentsModal").CommentTarget | null}
+          comments={activeCommentRows}
+          isAdmin={isAdmin}
+          commentInput={commentInput}
+          onInputChange={setCommentInput}
+          onAddComment={() => void handleCreateComment()}
+          onDeleteComment={(id) => void handleDeleteComment(id)}
+        />
 
         {view === "inventory" && (
           <section className="view active">
@@ -1194,33 +1082,31 @@ export default function Home() {
               <StatCard
                 label="Low Stock Item Types"
                 value={stats.low}
-                icon="📦"
+                icon={Package}
                 tone="warning"
               />
 
               <StatCard
                 label="Critically Low Item Types"
                 value={stats.critical}
-                icon="⚠"
+                icon={AlertTriangle}
                 tone="critical"
               />
 
               <StatCard
                 label="Out of Stock Item Types"
                 value={stats.out}
-                icon="⊘"
+                icon={PackageX}
                 tone="muted"
               />
 
               <StatCard
                 label="Expiring Item Types"
                 value={stats.expiring}
-                icon="⏱"
+                icon={Clock}
                 tone="danger"
               />
             </div>
-
-            <p className="section-tag">INVENTORY</p>
 
             <InventoryTable
               items={itemTypes}
@@ -1236,8 +1122,6 @@ export default function Home() {
 
         {view === "stock-items" && (
           <section className="view active">
-            <p className="section-tag">STOCK ITEMS</p>
-
             <StockItemsTable
               items={inventory}
               itemTypes={itemTypes}
@@ -1333,10 +1217,20 @@ export default function Home() {
         )}
       </main>
 
-      <div className={toast ? "toast show" : "toast"}>
-        <span>✓</span>
-        <span>{toast}</span>
-      </div>
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            className="toast show"
+            initial={{ opacity: 0, y: 16, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 380, damping: 26 }}
+          >
+            <CheckCircle2 size={15} strokeWidth={2} />
+            <span>{toast}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

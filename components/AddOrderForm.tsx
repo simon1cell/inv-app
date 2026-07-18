@@ -2,6 +2,8 @@
 
 import { FormEvent, useMemo, useState } from "react";
 
+import { ArrowLeft } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   todayInputValue,
   type InventoryItem,
@@ -272,13 +274,13 @@ export default function AddOrderForm({
         <span className="cur">Adding Order</span>
       </div>
 
-      <form className="form-card" onSubmit={handleSubmit}>
+      <form className="form-card max-w-5xl" onSubmit={handleSubmit}>
         <div className="form-top">
           <h2>Order Information</h2>
         </div>
 
-        <div className="grid">
-          <div className="field">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-4 mb-6">
+          <div className="field col-span-1 sm:col-span-2">
             <label>
               Item Type <span className="req-star">*</span>
             </label>
@@ -300,7 +302,7 @@ export default function AddOrderForm({
             </div>
           </div>
 
-          <div className="field">
+          <div className="field col-span-1 sm:col-span-2">
             <label>Autofill From Existing Item</label>
             <div className="control">
               <select
@@ -400,7 +402,7 @@ export default function AddOrderForm({
             </div>
           </div>
 
-          <div className="field">
+          <div className="field col-span-1 sm:col-span-2">
             <label>
               Item Name <span className="req-star">*</span>
             </label>
@@ -601,7 +603,7 @@ export default function AddOrderForm({
             </div>
           </div>
 
-          <div className="field">
+          <div className="field col-span-1 sm:col-span-2">
             <label>CC/Invoice?</label>
             <div className="control">
               <input
@@ -616,13 +618,8 @@ export default function AddOrderForm({
         </div>
 
         <div className="form-footer">
-          <button type="button" className="btn secondary" onClick={onBack}>
-            Back
-          </button>
-
-          <button type="submit" className="btn primary" disabled={!formValid}>
-            Submit Order
-          </button>
+          <Button type="button" variant="outline" onClick={onBack} icon={ArrowLeft} text="Back" />
+          <Button type="submit" className="btn primary" disabled={!formValid} text="Submit Order" />
         </div>
 
         <datalist id="item-name-suggestions">

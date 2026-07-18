@@ -1,12 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft, Save, X } from "lucide-react";
 
-import type {
-  InventoryItem,
-  ItemType,
-  OrderRecord,
-} from "@/types/inventory";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+import type { InventoryItem, ItemType, OrderRecord } from "@/types/inventory";
 
 type ItemPayload = {
   item_type_id?: number | null;
@@ -45,47 +53,29 @@ function cleanDisplay(value: string | null | undefined) {
 
 function toInputDate(value: string | null | undefined) {
   const clean = cleanDisplay(value);
-
   if (!clean) return "";
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) {
-    return clean;
-  }
-
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean;
   const match = clean.match(/^(\d{2})-(\d{2})-(\d{4})$/);
-
   if (!match) return "";
-
   return `${match[3]}-${match[1]}-${match[2]}`;
 }
 
 function toNumber(value: string, fallback = 0) {
   const number = Number(value);
-
   return Number.isFinite(number) ? number : fallback;
 }
 
 function toNullableNumber(value: string) {
   const clean = value.trim();
-
   if (!clean) return null;
-
   const number = Number(clean);
-
   return Number.isFinite(number) ? number : null;
 }
 
-export default function AddItemForm({
-  mode,
-  item,
-  itemTypes,
-  onBack,
-  onSubmitItem,
-}: AddItemFormProps) {
+export default function AddItemForm({ mode, item, itemTypes, onBack, onSubmitItem }: AddItemFormProps) {
   const currentItemType = useMemo(() => {
     if (!item?.itemTypeId) return null;
-
-    return itemTypes.find((candidate) => candidate.id === item.itemTypeId) ?? null;
+    return itemTypes.find((c) => c.id === item.itemTypeId) ?? null;
   }, [item, itemTypes]);
 
   const [form, setForm] = useState({
@@ -125,10 +115,8 @@ export default function AddItemForm({
         criticalThreshold: String(currentItemType?.criticalThreshold ?? 1),
         tags: item.tags.join(", "),
       });
-
       return;
     }
-
     setForm({
       itemTypeId: "",
       itemName: "",
@@ -148,32 +136,20 @@ export default function AddItemForm({
   }, [currentItemType, item, mode]);
 
   function handleItemTypeChange(value: string) {
-    const selectedItemType = itemTypes.find(
-      (candidate) => String(candidate.id) === value,
-    );
-
-    setForm((current) => ({
-      ...current,
+    const selected = itemTypes.find((c) => String(c.id) === value);
+    setForm((f) => ({
+      ...f,
       itemTypeId: value,
-      itemName:
-        mode === "create" && selectedItemType
-          ? selectedItemType.name
-          : current.itemName,
-      category: selectedItemType?.category ?? current.category,
-      reorderThreshold: String(
-        selectedItemType?.reorderThreshold ?? current.reorderThreshold,
-      ),
-      criticalThreshold: String(
-        selectedItemType?.criticalThreshold ?? current.criticalThreshold,
-      ),
+      itemName: mode === "create" && selected ? selected.name : f.itemName,
+      category: selected?.category ?? f.category,
+      reorderThreshold: String(selected?.reorderThreshold ?? f.reorderThreshold),
+      criticalThreshold: String(selected?.criticalThreshold ?? f.criticalThreshold),
     }));
   }
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
     setSaving(true);
-
     try {
       const payload: ItemPayload = {
         item_type_id: form.itemTypeId ? Number(form.itemTypeId) : null,
@@ -190,253 +166,137 @@ export default function AddItemForm({
         shelf_num: form.shelfNum.trim() || null,
         tags: form.tags.trim(),
       };
-
-      if (mode === "create") {
-        payload.last_restocked = form.lastRestocked || today();
-      }
-
+      if (mode === "create") payload.last_restocked = form.lastRestocked || today();
       await onSubmitItem(payload);
     } finally {
       setSaving(false);
     }
   }
 
+  const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+
   return (
     <section className="view active">
-      <p className="section-tag">
-        STOCK ITEMS / {mode === "create" ? "Adding Stock Item" : "Editing Stock Item"}
-      </p>
+      <div className="page-header">
+        <div>
+          <h2 className="page-title">
+            {mode === "create" ? "Add Stock Item" : "Edit Stock Item"}
+          </h2>
+          <p className="page-sub">
+            Stock items are individual catalog, lot, storage, and quantity records.
+          </p>
+        </div>
+      </div>
 
       <form className="card form-card" onSubmit={handleSubmit}>
-        <div className="card-head">
-          <div>
-            <h2>{mode === "create" ? "Add Stock Item" : "Edit Stock Item"}</h2>
-            <p className="sub">
-              Stock items are individual catalog, lot, storage, and quantity
-              records. Orders are handled from the Orders page.
-            </p>
+        <div className="form-grid">
+          {/* Item Type */}
+          <div className="form-field">
+            <Label htmlFor="itemTypeId">Item Type <span className="req-star">*</span></Label>
+            <Select value={form.itemTypeId} onValueChange={handleItemTypeChange} required>
+              <SelectTrigger id="itemTypeId">
+                <SelectValue placeholder="Select item type" />
+              </SelectTrigger>
+              <SelectContent>
+                {itemTypes.map((t) => (
+                  <SelectItem key={t.id} value={String(t.id)}>
+                    {t.name}{t.category ? ` · ${t.category}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
-          <button type="button" className="btn" onClick={onBack}>
-            Back
-          </button>
-        </div>
+          {/* Catalog Number */}
+          <div className="form-field">
+            <Label htmlFor="catalogueNum">Catalog Number <span className="req-star">*</span></Label>
+            <Input id="catalogueNum" value={form.catalogueNum} onChange={set("catalogueNum")} disabled={mode === "edit"} required />
+          </div>
 
-        <div className="form-grid">
-          <label>
-            Item Type *
-            <select
-              value={form.itemTypeId}
-              onChange={(event) => handleItemTypeChange(event.target.value)}
-              required
-            >
-              <option value="">Select item type</option>
-              {itemTypes.map((itemType) => (
-                <option key={itemType.id} value={itemType.id}>
-                  {itemType.name}
-                  {itemType.category ? ` · ${itemType.category}` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
+          {/* Item Name */}
+          <div className="form-field">
+            <Label htmlFor="itemName">Item Name <span className="req-star">*</span></Label>
+            <Input id="itemName" value={form.itemName} onChange={set("itemName")} required />
+          </div>
 
-          <label>
-            Catalog Number *
-            <input
-              value={form.catalogueNum}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  catalogueNum: event.target.value,
-                }))
-              }
-              disabled={mode === "edit"}
-              required
-            />
-          </label>
+          {/* Category */}
+          <div className="form-field">
+            <Label htmlFor="category">Category</Label>
+            <Input id="category" value={form.category} onChange={set("category")} />
+          </div>
 
-          <label>
-            Item Name *
-            <input
-              value={form.itemName}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  itemName: event.target.value,
-                }))
-              }
-              required
-            />
-          </label>
+          {/* Brand */}
+          <div className="form-field">
+            <Label htmlFor="brand">Brand / Vendor</Label>
+            <Input id="brand" value={form.brand} onChange={set("brand")} />
+          </div>
 
-          <label>
-            Category
-            <input
-              value={form.category}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  category: event.target.value,
-                }))
-              }
-            />
-          </label>
+          {/* Storage */}
+          <div className="form-field">
+            <Label htmlFor="storageId">Storage <span className="req-star">*</span></Label>
+            <Input id="storageId" value={form.storageId} onChange={set("storageId")} required />
+          </div>
 
-          <label>
-            Brand / Vendor
-            <input
-              value={form.brand}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  brand: event.target.value,
-                }))
-              }
-            />
-          </label>
+          {/* Shelf # */}
+          <div className="form-field">
+            <Label htmlFor="shelfNum">Shelf #</Label>
+            <Input id="shelfNum" value={form.shelfNum} onChange={set("shelfNum")} />
+          </div>
 
-          <label>
-            Storage *
-            <input
-              value={form.storageId}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  storageId: event.target.value,
-                }))
-              }
-              required
-            />
-          </label>
+          {/* Lot # */}
+          <div className="form-field">
+            <Label htmlFor="lotNum">Lot #</Label>
+            <Input id="lotNum" value={form.lotNum} onChange={set("lotNum")} />
+          </div>
 
-          <label>
-            Shelf #
-            <input
-              value={form.shelfNum}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  shelfNum: event.target.value,
-                }))
-              }
-            />
-          </label>
+          {/* Quantity */}
+          <div className="form-field">
+            <Label htmlFor="quantity">Quantity <span className="req-star">*</span></Label>
+            <Input id="quantity" type="number" value={form.quantity} onChange={set("quantity")} required />
+          </div>
 
-          <label>
-            Lot #
-            <input
-              value={form.lotNum}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  lotNum: event.target.value,
-                }))
-              }
-            />
-          </label>
+          {/* Expiry Date */}
+          <div className="form-field">
+            <Label htmlFor="expiryDate">Expiry Date</Label>
+            <Input id="expiryDate" type="date" value={form.expiryDate} onChange={set("expiryDate")} />
+          </div>
 
-          <label>
-            Quantity *
-            <input
-              type="number"
-              value={form.quantity}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  quantity: event.target.value,
-                }))
-              }
-              required
-            />
-          </label>
-
-          <label>
-            Expiry Date
-            <input
-              type="date"
-              value={form.expiryDate}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  expiryDate: event.target.value,
-                }))
-              }
-            />
-          </label>
-
+          {/* Last Restocked — create only */}
           {mode === "create" && (
-            <label>
-              Last Restocked
-              <input
-                type="date"
-                value={form.lastRestocked}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    lastRestocked: event.target.value,
-                  }))
-                }
-              />
-            </label>
+            <div className="form-field">
+              <Label htmlFor="lastRestocked">Last Restocked</Label>
+              <Input id="lastRestocked" type="date" value={form.lastRestocked} onChange={set("lastRestocked")} />
+            </div>
           )}
 
-          <label>
-            Reorder Threshold
-            <input
-              type="number"
-              min="0"
-              value={form.reorderThreshold}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  reorderThreshold: event.target.value,
-                }))
-              }
-            />
-          </label>
+          {/* Reorder Threshold */}
+          <div className="form-field">
+            <Label htmlFor="reorderThreshold">Reorder Threshold</Label>
+            <Input id="reorderThreshold" type="number" min="0" value={form.reorderThreshold} onChange={set("reorderThreshold")} />
+          </div>
 
-          <label>
-            Critical Threshold
-            <input
-              type="number"
-              min="0"
-              value={form.criticalThreshold}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  criticalThreshold: event.target.value,
-                }))
-              }
-            />
-          </label>
+          {/* Critical Threshold */}
+          <div className="form-field">
+            <Label htmlFor="criticalThreshold">Critical Threshold</Label>
+            <Input id="criticalThreshold" type="number" min="0" value={form.criticalThreshold} onChange={set("criticalThreshold")} />
+          </div>
 
-          <label>
-            Tags
-            <input
-              value={form.tags}
-              placeholder="example: gloves, freezer, order"
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  tags: event.target.value,
-                }))
-              }
-            />
-          </label>
+          {/* Tags */}
+          <div className="form-field">
+            <Label htmlFor="tags">Tags</Label>
+            <Input id="tags" value={form.tags} onChange={set("tags")} placeholder="gloves, freezer, order" />
+          </div>
         </div>
 
         <div className="form-actions">
-          <button type="button" className="btn" onClick={onBack}>
-            Cancel
-          </button>
-
-          <button type="submit" className="btn primary" disabled={saving}>
-            {saving
-              ? "Saving..."
-              : mode === "create"
-                ? "Add Stock Item"
-                : "Save Stock Item"}
-          </button>
+          <Button type="button" variant="outline" onClick={onBack} icon={X} text="Cancel" />
+          <Button
+            type="submit"
+            disabled={saving}
+            icon={Save}
+            text={saving ? "Saving…" : mode === "create" ? "Add Stock Item" : "Save Stock Item"}
+          />
         </div>
       </form>
     </section>
