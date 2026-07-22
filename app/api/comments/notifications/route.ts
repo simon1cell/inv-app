@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
       const commentRead = item.comment_reads[0];
       const lastSeenAt = commentRead ? new Date(commentRead.last_seen_at) : new Date(0);
 
-      const unreadComments = comments.filter((c) => new Date(c.created_at) > lastSeenAt);
+      const unreadComments = comments.filter((c: { created_at: string | Date }) => new Date(c.created_at) > lastSeenAt);
       const unreadCount = unreadComments.length;
 
       if (unreadCount > 0) {
