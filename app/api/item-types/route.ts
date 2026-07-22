@@ -17,8 +17,20 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    const mapped = itemTypes.map((it) => {
-      const total_quantity = it.items.reduce((sum, item) => sum + item.quantity, 0);
+    const mapped = itemTypes.map((it: {
+      id: number;
+      name: string;
+      category: string | null;
+      brand: string | null;
+      reorder_threshold: number;
+      critical_threshold: number;
+      notes: string | null;
+      items: { quantity: number }[];
+    }) => {
+      const total_quantity = it.items.reduce(
+        (sum: number, item: { quantity: number }) => sum + item.quantity,
+        0,
+      );
       return {
         id: it.id,
         name: it.name,
