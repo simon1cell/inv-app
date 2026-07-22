@@ -37,7 +37,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       },
     });
 
-    const total_quantity = updated.items.reduce((sum, item) => sum + item.quantity, 0);
+    const total_quantity = updated.items.reduce((sum: number, item: { quantity: number }) => sum + item.quantity, 0);
 
     return NextResponse.json({
       id: updated.id,
