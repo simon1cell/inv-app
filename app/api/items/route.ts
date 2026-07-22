@@ -3,6 +3,15 @@ import { prisma } from "@/lib/prisma";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { createItem, createAuditLog } from "@/lib/crud";
 
+
+
+type ItemRouteRow = {
+  quantity: number;
+  critical_threshold: number;
+  reorder_threshold: number;
+  expiry_date?: string | Date | null;
+};
+
 export async function GET(req: NextRequest) {
   try {
     const payload = await getAuthenticatedUser(req);
@@ -79,9 +88,9 @@ export async function GET(req: NextRequest) {
     // Handle dynamic filter comparisons that are complex to write in pure SQLite prisma clauses
     let filteredItems = items;
     if (status === "critical") {
-      filteredItems = items.filter((i) => i.quantity > 0 && i.quantity <= i.critical_threshold);
+      filteredItems = items.filter((i: ItemRouteRow) => i.quantity > 0 && i.quantity <= i.critical_threshold);
     } else if (status === "low_stock") {
-      filteredItems = items.filter((i) => i.quantity <= i.reorder_threshold);
+      filteredItems = items.filter((i: ItemRouteRow) => i.quantity <= i.reorder_threshold);
     }
 
     // Format expiry_date and last_restocked to YYYY-MM-DD
