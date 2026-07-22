@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, Save, X } from "lucide-react";
+import { Save, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,33 +17,47 @@ type ItemTypePayload = {
 };
 
 type ItemTypeFormProps = {
-  itemType: ItemType;
+  mode?: "create" | "edit";
+  itemType?: ItemType | null;
   onBack: () => void;
   onSubmitItemType: (payload: ItemTypePayload) => Promise<void>;
 };
 
-export default function ItemTypeForm({ itemType, onBack, onSubmitItemType }: ItemTypeFormProps) {
-  const [form, setForm] = useState({
-    name: itemType.name,
-    category: itemType.category ?? "",
-    reorderThreshold: String(itemType.reorderThreshold),
-    criticalThreshold: String(itemType.criticalThreshold),
-  });
+const EMPTY_FORM = {
+  name: "",
+  category: "",
+  reorderThreshold: "5",
+  criticalThreshold: "1",
+};
 
+export default function ItemTypeForm({
+  mode = "edit",
+  itemType = null,
+  onBack,
+  onSubmitItemType,
+}: ItemTypeFormProps) {
+  const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    setForm({
-      name: itemType.name,
-      category: itemType.category ?? "",
-      reorderThreshold: String(itemType.reorderThreshold),
-      criticalThreshold: String(itemType.criticalThreshold),
-    });
-  }, [itemType]);
+    if (mode === "edit" && itemType) {
+      setForm({
+        name: itemType.name,
+        category: itemType.category ?? "",
+        reorderThreshold: String(itemType.reorderThreshold),
+        criticalThreshold: String(itemType.criticalThreshold),
+      });
+      return;
+    }
+
+    setForm(EMPTY_FORM);
+  }, [itemType, mode]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+
     setSaving(true);
+
     try {
       await onSubmitItemType({
         name: form.name.trim(),
@@ -57,15 +71,17 @@ export default function ItemTypeForm({ itemType, onBack, onSubmitItemType }: Ite
   }
 
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm((f) => ({ ...f, [key]: e.target.value }));
+    setForm((current) => ({ ...current, [key]: e.target.value }));
 
   return (
     <section className="view active">
       <div className="page-header">
         <div>
-          <h2 className="page-title">Edit Item Type</h2>
+          <h2 className="page-title">
+            {mode === "create" ? "Add Item Type" : "Edit Item Type"}
+          </h2>
           <p className="page-sub">
-            Edit the grouped inventory record. Brands and quantity come from linked stock items.
+            Item types are grouped catalog records used by stock items and orders.
           </p>
         </div>
       </div>
@@ -73,7 +89,9 @@ export default function ItemTypeForm({ itemType, onBack, onSubmitItemType }: Ite
       <form className="card form-card" onSubmit={handleSubmit}>
         <div className="form-grid">
           <div className="form-field">
-            <Label htmlFor="name">Item Type Name <span className="req-star">*</span></Label>
+            <Label htmlFor="name">
+              Item Type Name <span className="req-star">*</span>
+            </Label>
             <Input id="name" value={form.name} onChange={set("name")} required />
           </div>
 
@@ -84,12 +102,24 @@ export default function ItemTypeForm({ itemType, onBack, onSubmitItemType }: Ite
 
           <div className="form-field">
             <Label htmlFor="reorderThreshold">Reorder Threshold</Label>
-            <Input id="reorderThreshold" type="number" min="0" value={form.reorderThreshold} onChange={set("reorderThreshold")} />
+            <Input
+              id="reorderThreshold"
+              type="number"
+              min="0"
+              value={form.reorderThreshold}
+              onChange={set("reorderThreshold")}
+            />
           </div>
 
           <div className="form-field">
             <Label htmlFor="criticalThreshold">Critical Threshold</Label>
-            <Input id="criticalThreshold" type="number" min="0" value={form.criticalThreshold} onChange={set("criticalThreshold")} />
+            <Input
+              id="criticalThreshold"
+              type="number"
+              min="0"
+              value={form.criticalThreshold}
+              onChange={set("criticalThreshold")}
+            />
           </div>
         </div>
 
@@ -99,7 +129,13 @@ export default function ItemTypeForm({ itemType, onBack, onSubmitItemType }: Ite
             type="submit"
             disabled={saving}
             icon={Save}
-            text={saving ? "Saving…" : "Save Item Type"}
+            text={
+              saving
+                ? "Saving…"
+                : mode === "create"
+                  ? "Add Item Type"
+                  : "Save Item Type"
+            }
           />
         </div>
       </form>

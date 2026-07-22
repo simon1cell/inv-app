@@ -1016,44 +1016,93 @@ tbody tr:hover {
 
 /* Quantity stepper */
 
+.quantity-cell {
+  white-space: nowrap;
+}
+
 .qty {
   display: inline-flex;
   align-items: center;
-  border: 1px solid var(--border-soft);
-  border-radius: 8px;
-  overflow: hidden;
-  height: 38px;
-  background: var(--card-bg);
+  gap: 4px;
+  padding: 4px;
+  min-height: 44px;
+  border: 1px solid rgba(29, 78, 216, 0.15);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: var(--shadow-xs);
+  transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
 }
 
-.qty button {
-  width: 36px;
-  height: 100%;
-  border: none;
-  background: transparent;
-  color: var(--subdued);
-  font-size: 18px;
+.qty:hover {
+  border-color: rgba(29, 78, 216, 0.28);
+  box-shadow: var(--shadow-card);
+}
+
+.qty:focus-within {
+  border-color: var(--focus-border);
+  box-shadow: 0 0 0 3px var(--focus-ring), var(--shadow-xs);
+}
+
+.qty.is-busy {
+  opacity: 0.75;
+}
+
+.qty button,
+.qty-btn {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 999px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s;
+  padding: 0;
+  transition: background 0.18s, color 0.18s, box-shadow 0.18s;
 }
 
-.qty button:hover:not(:disabled) {
-  background: var(--border-faint);
+.qty button.minus,
+.qty-btn.minus {
+  background: #eef2f7;
+  color: var(--subdued);
+}
+
+.qty button.plus,
+.qty-btn.plus {
+  background: linear-gradient(135deg, var(--action) 0%, var(--action-hover) 100%);
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(29, 78, 216, 0.22);
+}
+
+.qty button:hover:not(:disabled),
+.qty-btn:hover:not(:disabled) {
+  box-shadow: var(--shadow-xs);
+}
+
+.qty button:disabled,
+.qty-btn:disabled {
+  background: transparent;
+  color: var(--placeholder);
+  box-shadow: none;
 }
 
 .qty input {
-  width: 52px;
+  width: 60px;
+  min-width: 60px;
+  height: 34px;
+  padding: 0 6px;
   text-align: center;
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 700;
   color: var(--text);
   border: 0;
-  border-left: 1px solid var(--border-soft);
-  border-right: 1px solid var(--border-soft);
-  height: 100%;
+  border-radius: 999px;
+  background: transparent;
   outline: none;
   appearance: textfield;
+}
+
+.qty input:disabled {
+  color: var(--muted-text);
 }
 
 .qty input::-webkit-outer-spin-button,

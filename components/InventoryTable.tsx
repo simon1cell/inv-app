@@ -33,7 +33,8 @@ type InventoryTableProps = {
   items: ItemType[];
   isAdmin: boolean;
   commentCountsByItemTypeId: Record<number, number>;
-  onAddItem: () => void;
+  onAddItemType: () => void;
+  onAddStockItem: () => void;
   onEditItem: (item: ItemType) => void;
   onDeleteItem: (itemId: number) => void;
   onViewComments: (item: ItemType) => void;
@@ -57,7 +58,8 @@ export default function InventoryTable({
   items,
   isAdmin,
   commentCountsByItemTypeId,
-  onAddItem,
+  onAddItemType,
+  onAddStockItem,
   onEditItem,
   onDeleteItem,
   onViewComments,
@@ -108,12 +110,21 @@ export default function InventoryTable({
         </div>
 
         {isAdmin && (
-          <Button
-            size="sm"
-            onClick={onAddItem}
-            icon={Plus}
-            text="Add Stock Item"
-          />
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onAddItemType}
+              icon={Plus}
+              text="Add Item Type"
+            />
+            <Button
+              size="sm"
+              onClick={onAddStockItem}
+              icon={Plus}
+              text="Add Stock Item"
+            />
+          </div>
         )}
       </div>
 

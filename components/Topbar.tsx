@@ -12,6 +12,7 @@ const CRUMBS: Record<View, { root: string; rootView: View; current?: string }> =
   orders:           { root: "Orders",       rootView: "orders" },
   "add-item":       { root: "Stock Items",  rootView: "stock-items",    current: "Add Item" },
   "edit-item":      { root: "Stock Items",  rootView: "stock-items",    current: "Edit Item" },
+  "add-item-type":  { root: "Inventory",    rootView: "inventory",      current: "Add Item Type" },
   "edit-item-type": { root: "Inventory",    rootView: "inventory",      current: "Edit Item Type" },
   "add-order":      { root: "Orders",       rootView: "orders",         current: "New Order" },
   audit:            { root: "Audit Log",    rootView: "audit" },

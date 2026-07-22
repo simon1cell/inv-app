@@ -30,8 +30,10 @@ import UsersPage from "@/components/UsersPage";
 
 import {
   createItem,
+  createItemType,
   createItemComment,
   createOrderRecord,
+  createTransaction,
   createUser,
   deleteItem,
   deleteItemComment,
@@ -405,6 +407,14 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function goToAddItemType() {
+    if (!isAdmin) return;
+
+    setEditingItemType(null);
+    setView("add-item-type");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function goToAddOrder(item?: InventoryItem) {
     if (!isAdmin) return;
 
@@ -443,6 +453,25 @@ export default function Home() {
     }
   }
 
+  async function handleCreateItemType(payload: {
+    name: string;
+    category?: string | null;
+    reorder_threshold?: number;
+    critical_threshold?: number;
+  }) {
+    setError("");
+
+    try {
+      await createItemType(token, payload);
+      await refreshInventory();
+
+      showToast("Item type added");
+      setView("inventory");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add item type");
+    }
+  }
+
   async function handleDeleteItemType(itemId: number) {
     if (!isAdmin) return;
 
@@ -478,6 +507,34 @@ export default function Home() {
     setEditingItem(item);
     setView("edit-item");
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function handleUseStockItem(itemId: string, amount: number) {
+    setError("");
+
+    try {
+      await createTransaction(token, itemId, -amount);
+      await refreshInventory();
+
+      showToast(`Used ${amount}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to use stock item");
+    }
+  }
+
+  async function handleRestockStockItem(itemId: string, amount: number) {
+    if (!isAdmin) return;
+
+    setError("");
+
+    try {
+      await createTransaction(token, itemId, amount);
+      await refreshInventory();
+
+      showToast(`Restocked ${amount}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to restock stock item");
+    }
   }
 
   async function handleDeleteStockItem(itemId: string) {
@@ -922,11 +979,14 @@ export default function Home() {
   async function handleMarkOrderPaid(orderId: number) {
     setError("");
 
+    const order = orders.find((candidate) => candidate.id === orderId);
+    const amountPaid = order?.finalPrice ?? order?.totalPrice ?? null;
+
     try {
       await markOrderPaid(token, orderId, {
         date_paid: new Date().toISOString().slice(0, 10),
-        amount_paid: null,
-        cc_invoice: null,
+        amount_paid: amountPaid,
+        cc_invoice: order?.ccInvoice ?? null,
         notes: "Marked paid from Orders page",
       });
 
@@ -1139,7 +1199,8 @@ export default function Home() {
               items={itemTypes}
               isAdmin={isAdmin}
               commentCountsByItemTypeId={totalCommentCountsByItemTypeId}
-              onAddItem={goToAddItem}
+              onAddItemType={goToAddItemType}
+              onAddStockItem={goToAddItem}
               onEditItem={handleEditItemType}
               onDeleteItem={handleDeleteItemType}
               onViewComments={(item) => void handleViewItemTypeComments(item)}
@@ -1158,6 +1219,8 @@ export default function Home() {
               onEditItem={handleEditStockItem}
               onDeleteItem={handleDeleteStockItem}
               onViewComments={(item) => void handleViewStockItemComments(item)}
+              onUseItem={handleUseStockItem}
+              onRestockItem={handleRestockStockItem}
             />
           </section>
         )}
@@ -1197,12 +1260,21 @@ export default function Home() {
 
         {isAdmin && view === "edit-item-type" && editingItemType && (
           <ItemTypeForm
+            mode="edit"
             itemType={editingItemType}
             onBack={() => {
               setEditingItemType(null);
               setView("inventory");
             }}
             onSubmitItemType={handleUpdateItemType}
+          />
+        )}
+
+        {isAdmin && view === "add-item-type" && (
+          <ItemTypeForm
+            mode="create"
+            onBack={() => setView("inventory")}
+            onSubmitItemType={handleCreateItemType}
           />
         )}
 

@@ -126,6 +126,19 @@ export default function OrdersPage({
     [activeOrderCatalogs, inventoryItems],
   );
 
+  const pendingDeliveryOrders = useMemo(() => {
+    return orders.filter((order) => {
+      const status = (order.status || "").toLowerCase();
+
+      return (
+        !order.deliveryDate &&
+        status !== "delivered" &&
+        status !== "paid" &&
+        status !== "cancelled"
+      );
+    });
+  }, [orders]);
+
   const filtered = useMemo(() => {
     const query = search.toLowerCase();
 
@@ -298,6 +311,43 @@ export default function OrdersPage({
   return (
     <section className="view active">
       <p className="section-tag">ORDERS</p>
+
+      {pendingDeliveryOrders.length > 0 && (
+        <div className="card order-suggestions">
+          <div className="card-head">
+            <div>
+              <h2>Pending Orders / Need Delivery</h2>
+              <p className="sub">
+                {pendingDeliveryOrders.length} orders still need delivery confirmation
+              </p>
+            </div>
+          </div>
+
+          <div className="suggestion-list">
+            {pendingDeliveryOrders.slice(0, 12).map((order) => (
+              <div key={order.id} className="suggestion-row">
+                <div>
+                  <strong>{order.itemName}</strong>
+                  <p className="sub">
+                    {text(order.vendor)} · {text(order.catalogNo)} · Qty{" "}
+                    {text(order.unitsOrdered)} · Expected{" "}
+                    {text(order.expectedDeliveryDate)}
+                  </p>
+                </div>
+
+                <Button
+                  type="button"
+                  className="mini-btn good"
+                  disabled={busyOrderId === order.id}
+                  onClick={() => void handleMarkDelivered(order.id)}
+                  icon={Truck}
+                  text="Mark Delivered"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {suggestedItems.length > 0 && (
         <div className="card order-suggestions">

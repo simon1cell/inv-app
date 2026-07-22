@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import {
   FlaskConical,
   MessageSquare,
+  Minus,
   Pencil,
   Plus,
   Search,
@@ -38,10 +39,21 @@ type StockItemsTableProps = {
   onEditItem: (item: InventoryItem) => void;
   onDeleteItem: (itemId: string) => void;
   onViewComments: (item: InventoryItem) => void;
+  onUseItem: (itemId: string, amount: number) => Promise<void>;
+  onRestockItem: (itemId: string, amount: number) => Promise<void>;
 };
 
 type FilterValue = Status | "everything";
-type SortKey = "name" | "itemType" | "catalog" | "brand" | "lot" | "storage" | "quantity" | "expiry" | "status";
+type SortKey =
+  | "name"
+  | "itemType"
+  | "catalog"
+  | "brand"
+  | "lot"
+  | "storage"
+  | "quantity"
+  | "expiry"
+  | "status";
 
 const FILTERS: Array<{ label: string; value: FilterValue }> = [
   { label: "Everything", value: "everything" },
@@ -51,7 +63,12 @@ const FILTERS: Array<{ label: string; value: FilterValue }> = [
 ];
 
 const STATUS_ORDER: Record<string, number> = {
-  out: 0, critical: 1, low: 2, expiring: 3, transit: 4, high: 5,
+  out: 0,
+  critical: 1,
+  low: 2,
+  expiring: 3,
+  transit: 4,
+  high: 5,
 };
 
 export default function StockItemsTable({
@@ -63,16 +80,97 @@ export default function StockItemsTable({
   onEditItem,
   onDeleteItem,
   onViewComments,
+  onUseItem,
+  onRestockItem,
 }: StockItemsTableProps) {
   const [filter, setFilter] = useState<FilterValue>("everything");
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
+  const [busyItemId, setBusyItemId] = useState<string | null>(null);
+
   const { sort, toggleSort } = useSortable<SortKey>("name");
 
   const itemTypeById = useMemo(
     () => new Map(itemTypes.map((t) => [t.id, t])),
     [itemTypes],
   );
+
+  function quantityValueFor(item: InventoryItem) {
+    return quantityDrafts[item.id] ?? String(item.quantity);
+  }
+
+  function setQuantityDraft(itemId: string, value: string) {
+    if (!/^\d*$/.test(value)) return;
+
+    setQuantityDrafts((current) => ({
+      ...current,
+      [itemId]: value,
+    }));
+  }
+
+  function clearQuantityDraft(itemId: string) {
+    setQuantityDrafts((current) => {
+      if (!(itemId in current)) return current;
+
+      const next = { ...current };
+      delete next[itemId];
+      return next;
+    });
+  }
+
+  async function applyQuantityChange(item: InventoryItem, nextQuantity: number) {
+    if (busyItemId === item.id) return;
+
+    if (!Number.isInteger(nextQuantity) || nextQuantity < 0) {
+      window.alert("Enter a whole number that is 0 or greater.");
+      clearQuantityDraft(item.id);
+      return;
+    }
+
+    if (!isAdmin && nextQuantity > item.quantity) {
+      window.alert("Only admins can increase quantity.");
+      clearQuantityDraft(item.id);
+      return;
+    }
+
+    if (nextQuantity === item.quantity) {
+      clearQuantityDraft(item.id);
+      return;
+    }
+
+    const delta = nextQuantity - item.quantity;
+
+    setBusyItemId(item.id);
+    try {
+      if (delta < 0) {
+        await onUseItem(item.id, Math.abs(delta));
+      } else {
+        await onRestockItem(item.id, delta);
+      }
+
+      clearQuantityDraft(item.id);
+    } finally {
+      setBusyItemId(null);
+    }
+  }
+
+  function commitQuantityDraft(item: InventoryItem) {
+    const rawValue = quantityValueFor(item).trim();
+
+    if (!rawValue) {
+      clearQuantityDraft(item.id);
+      return;
+    }
+
+    const parsed = Number(rawValue);
+    void applyQuantityChange(item, parsed);
+  }
+
+  function handleStepQuantity(item: InventoryItem, delta: number) {
+    const nextQuantity = Math.max(0, item.quantity + delta);
+    void applyQuantityChange(item, nextQuantity);
+  }
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -82,10 +180,22 @@ export default function StockItemsTable({
         const type = item.itemTypeId ? itemTypeById.get(item.itemTypeId) : null;
         const matchesFilter = filter === "everything" || item.status === filter;
         const text = [
-          item.itemName, type?.name, item.category, item.brand,
-          item.catalogueNum, item.lotNum, item.shelfNum, item.storageId,
-          item.quantity, item.expiryDate, item.tags.join(" "),
-        ].filter(Boolean).join(" ").toLowerCase();
+          item.itemName,
+          type?.name,
+          item.category,
+          item.brand,
+          item.catalogueNum,
+          item.lotNum,
+          item.shelfNum,
+          item.storageId,
+          item.quantity,
+          item.expiryDate,
+          item.tags.join(" "),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
         return matchesFilter && text.includes(query);
       })
       .sort((a, b) => {
@@ -94,21 +204,33 @@ export default function StockItemsTable({
         const typeB = b.itemTypeId ? itemTypeById.get(b.itemTypeId) : null;
 
         switch (sort.key) {
-          case "name":      return a.itemName.localeCompare(b.itemName) * dir;
-          case "itemType":  return (typeA?.name ?? "").localeCompare(typeB?.name ?? "") * dir;
-          case "catalog":   return a.catalogueNum.localeCompare(b.catalogueNum) * dir;
-          case "brand":     return (a.brand ?? "").localeCompare(b.brand ?? "") * dir;
-          case "lot":       return (a.lotNum ?? "").localeCompare(b.lotNum ?? "") * dir;
-          case "storage":   return a.storageId.localeCompare(b.storageId) * dir;
-          case "quantity":  return (a.quantity - b.quantity) * dir;
-          case "expiry":    return (a.expiryDate ?? "").localeCompare(b.expiryDate ?? "") * dir;
-          case "status":    return ((STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99)) * dir;
-          default:          return a.itemName.localeCompare(b.itemName);
+          case "name":
+            return a.itemName.localeCompare(b.itemName) * dir;
+          case "itemType":
+            return (typeA?.name ?? "").localeCompare(typeB?.name ?? "") * dir;
+          case "catalog":
+            return a.catalogueNum.localeCompare(b.catalogueNum) * dir;
+          case "brand":
+            return (a.brand ?? "").localeCompare(b.brand ?? "") * dir;
+          case "lot":
+            return String(a.lotNum ?? "").localeCompare(String(b.lotNum ?? "")) * dir;
+          case "storage":
+            return a.storageId.localeCompare(b.storageId) * dir;
+          case "quantity":
+            return (a.quantity - b.quantity) * dir;
+          case "expiry":
+            return (a.expiryDate ?? "").localeCompare(b.expiryDate ?? "") * dir;
+          case "status":
+            return ((STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99)) * dir;
+          default:
+            return a.itemName.localeCompare(b.itemName);
         }
       });
   }, [filter, items, itemTypeById, search, sort]);
 
-  useEffect(() => { setCurrentPage(1); }, [filter, search, sort.key, sort.direction]);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter, search, sort.key, sort.direction]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
@@ -164,16 +286,16 @@ export default function StockItemsTable({
           <TableHeader>
             <TableRow>
               <TableHead className="w-10">No</TableHead>
-              <SortableHeader label="Stock Item"  sortKey="name"     sort={sort} onSort={toggleSort} />
-              <SortableHeader label="Item Type"   sortKey="itemType" sort={sort} onSort={toggleSort} />
-              <SortableHeader label="Catalog #"   sortKey="catalog"  sort={sort} onSort={toggleSort} />
-              <SortableHeader label="Brand"       sortKey="brand"    sort={sort} onSort={toggleSort} />
-              <SortableHeader label="Lot #"       sortKey="lot"      sort={sort} onSort={toggleSort} />
-              <SortableHeader label="Storage"     sortKey="storage"  sort={sort} onSort={toggleSort} />
+              <SortableHeader label="Stock Item" sortKey="name" sort={sort} onSort={toggleSort} />
+              <SortableHeader label="Item Type" sortKey="itemType" sort={sort} onSort={toggleSort} />
+              <SortableHeader label="Catalog #" sortKey="catalog" sort={sort} onSort={toggleSort} />
+              <SortableHeader label="Brand" sortKey="brand" sort={sort} onSort={toggleSort} />
+              <SortableHeader label="Lot #" sortKey="lot" sort={sort} onSort={toggleSort} />
+              <SortableHeader label="Storage" sortKey="storage" sort={sort} onSort={toggleSort} />
               <TableHead>Shelf</TableHead>
-              <SortableHeader label="Qty"         sortKey="quantity" sort={sort} onSort={toggleSort} />
-              <SortableHeader label="Expiry"      sortKey="expiry"   sort={sort} onSort={toggleSort} />
-              <SortableHeader label="Status"      sortKey="status"   sort={sort} onSort={toggleSort} />
+              <SortableHeader label="Qty" sortKey="quantity" sort={sort} onSort={toggleSort} />
+              <SortableHeader label="Expiry" sortKey="expiry" sort={sort} onSort={toggleSort} />
+              <SortableHeader label="Status" sortKey="status" sort={sort} onSort={toggleSort} />
               <TableHead>Comments</TableHead>
               {isAdmin && <TableHead />}
             </TableRow>
@@ -184,6 +306,7 @@ export default function StockItemsTable({
               const itemType = item.itemTypeId ? itemTypeById.get(item.itemTypeId) : null;
               const commentCount = commentCountsByItemId[item.id] ?? 0;
               const absoluteIndex = (safePage - 1) * PAGE_SIZE + index + 1;
+              const busy = busyItemId === item.id;
 
               return (
                 <motion.tr
@@ -213,7 +336,61 @@ export default function StockItemsTable({
                   <TableCell>{item.lotNum}</TableCell>
                   <TableCell>{item.storageId}</TableCell>
                   <TableCell>{item.shelfNum}</TableCell>
-                  <TableCell className="strong-text">{item.quantity}</TableCell>
+                  <TableCell className="quantity-cell">
+                    <div className={`qty${busy ? " is-busy" : ""}`} aria-busy={busy}>
+                      <motion.button
+                        type="button"
+                        className="qty-btn minus"
+                        title="Decrease quantity"
+                        disabled={busy || item.quantity <= 0}
+                        onClick={() => handleStepQuantity(item, -1)}
+                        whileHover={{ scale: 1.08 }}
+                        whileTap={{ scale: 0.92 }}
+                      >
+                        <Minus size={13} strokeWidth={2} />
+                      </motion.button>
+
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        aria-label={`Quantity for ${item.itemName}`}
+                        title="Edit quantity and press Enter"
+                        value={quantityValueFor(item)}
+                        disabled={busy}
+                        onChange={(event) =>
+                          setQuantityDraft(item.id, event.target.value)
+                        }
+                        onBlur={() => commitQuantityDraft(item)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            commitQuantityDraft(item);
+                          }
+
+                          if (event.key === "Escape") {
+                            clearQuantityDraft(item.id);
+                            event.currentTarget.blur();
+                          }
+                        }}
+                      />
+
+                      {isAdmin && (
+                        <motion.button
+                          type="button"
+                          className="qty-btn plus"
+                          title="Increase quantity"
+                          disabled={busy}
+                          onClick={() => handleStepQuantity(item, 1)}
+                          whileHover={{ scale: 1.08 }}
+                          whileTap={{ scale: 0.92 }}
+                        >
+                          <Plus size={13} strokeWidth={2} />
+                        </motion.button>
+                      )}
+                    </div>
+                  </TableCell>
+
                   <TableCell>{item.expiryDate}</TableCell>
 
                   <TableCell>

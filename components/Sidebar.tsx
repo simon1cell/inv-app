@@ -27,7 +27,13 @@ type SidebarProps = {
 };
 
 const NAV_ITEMS = [
-  { view: "inventory" as View, label: "Inventory",   icon: LayoutDashboard, adminOnly: false },
+  {
+    view: "inventory" as View,
+    label: "Inventory",
+    icon: LayoutDashboard,
+    adminOnly: false,
+    matchViews: ["inventory", "add-item-type", "edit-item-type"] as View[],
+  },
   { view: "stock-items" as View, label: "Stock Items", icon: Package,         adminOnly: false, matchViews: ["stock-items", "add-item", "edit-item"] as View[] },
   { view: "orders" as View,     label: "Orders",      icon: ClipboardList,   adminOnly: true,  matchViews: ["orders", "add-order"] as View[] },
   { view: "users" as View,      label: "Users",       icon: Users,           adminOnly: true  },
