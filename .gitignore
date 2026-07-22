@@ -52,3 +52,4 @@ prisma/dev.db
 .next
 node_modules
 uploads/
+lib/generated/prisma/
