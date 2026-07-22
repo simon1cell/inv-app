@@ -1,12 +1,15 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import type { CSSProperties, ReactNode } from "react";
 import "./globals.css";
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-sans",
-  display: "swap",
-});
+type RootFontVariables = CSSProperties & {
+  "--font-sans": string;
+};
+
+const rootFontVariables: RootFontVariables = {
+  "--font-sans":
+    'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+};
 
 export const metadata: Metadata = {
   title: "1Cell.AI · Inventory Tracking",
@@ -16,11 +19,11 @@ export const metadata: Metadata = {
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode;
+  children: ReactNode;
 }>) {
   return (
-    <html lang="en" className={inter.variable}>
-      <body style={{ fontFamily: "var(--font-sans), system-ui, sans-serif" }}>
+    <html lang="en" style={rootFontVariables}>
+      <body style={{ fontFamily: "var(--font-sans)" }}>
         {children}
       </body>
     </html>
